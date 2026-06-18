@@ -1,0 +1,37 @@
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+pydantic==2.10.3
+python-multipart
+
+# YouTube download + stream HLS
+yt-dlp
+bgutil-ytdlp-pot-provider
+
+# Computer vision + YOLO
+ultralytics>=8.3.0          # YOLOv8 — includes torch, torchvision
+opencv-python-headless>=4.10.0  # OpenCV without GUI (headless for Docker)
+numpy>=1.26.0
+
+# LlamaIndex core + integrations
+llama-index-core==0.12.5
+llama-index-embeddings-huggingface
+llama-index-llms-ollama
+llama-index-llms-openai==0.3.15
+llama-index-embeddings-openai==0.3.1
+llama-index-vector_stores-chroma==0.4.1
+sentence-transformers
+
+# Vector store
+chromadb==0.6.3
+
+# YouTube transcription (pipeline existant)
+youtube-transcript-api==0.6.3
+
+# Auth Google (pipeline existant)
+google-auth
+google-auth-oauthlib
+google-api-python-client
+
+# Async HTTP
+httpx==0.28.1
+requests

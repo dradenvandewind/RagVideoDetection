@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <title>YOLO RAG — Détection en temps réel</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; padding: 20px; }
+    h1 { font-size: 1.2rem; font-weight: 500; margin-bottom: 16px; color: #fff; }
+
+    .controls {
+      display: flex; gap: 10px; flex-wrap: wrap;
+      margin-bottom: 16px; align-items: flex-end;
+    }
+    .controls input[type=text] {
+      flex: 1; min-width: 300px; padding: 8px 12px;
+      background: #1a1a1a; border: 1px solid #333; border-radius: 6px;
+      color: #e0e0e0; font-size: 0.9rem;
+    }
+    .controls input[type=range] { width: 120px; accent-color: #4caf50; }
+    .controls label { font-size: 0.8rem; color: #888; display: flex; flex-direction: column; gap: 4px; }
+    button {
+      padding: 8px 18px; border: none; border-radius: 6px; cursor: pointer;
+      font-size: 0.9rem; font-weight: 500;
+    }
+    #btn-start { background: #4caf50; color: #fff; }
+    #btn-start:disabled { background: #2d5e2e; cursor: not-allowed; }
+    #btn-stop  { background: #e53935; color: #fff; }
+
+    .grid { display: grid; grid-template-columns: 1fr 340px; gap: 16px; }
+
+    /* Canvas */
+    #canvas-wrap {
+      position: relative; background: #1a1a1a; border-radius: 8px;
+      overflow: hidden; min-height: 360px;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #canvas { max-width: 100%; height: auto; display: block; }
+    #placeholder {
+      color: #555; font-size: 0.85rem; text-align: center; padding: 20px;
+    }
+
+    /* Stats */
+    .stats {
+      background: #1a1a1a; border-radius: 8px; padding: 16px;
+      display: flex; flex-direction: column; gap: 8px;
+    }
+    .stat { display: flex; justify-content: space-between; font-size: 0.85rem; }
+    .stat span:last-child { color: #4caf50; font-weight: 500; }
+
+    /* Log */
+    #log {
+      margin-top: 16px; background: #1a1a1a; border-radius: 8px; padding: 12px;
+      font-family: monospace; font-size: 0.78rem; color: #aaa;
+      height: 160px; overflow-y: auto;
+    }
+    .log-det { color: #81c784; }
+    .log-err { color: #e57373; }
+    .log-info { color: #64b5f6; }
+
+    /* RAG chat */
+    .chat-section { margin-top: 16px; }
+    .chat-section h2 { font-size: 1rem; font-weight: 500; margin-bottom: 10px; }
+    .chat-row { display: flex; gap: 8px; }
+    .chat-row input {
+      flex: 1; padding: 8px 12px;
+      background: #1a1a1a; border: 1px solid #333; border-radius: 6px;
+      color: #e0e0e0; font-size: 0.9rem;
+    }
+    #chat-answer {
+      margin-top: 10px; padding: 12px;
+      background: #1a1a1a; border-radius: 6px; font-size: 0.85rem;
+      color: #ccc; min-height: 48px; white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <h1>🎯 YOLO RAG — Détection YouTube en temps réel</h1>
+
+  <div class="controls">
+    <input id="yt-url" type="text" placeholder="https://www.youtube.com/watch?v=…" value="">
+    <label>
+      Confiance
+      <input id="conf" type="range" min="10" max="90" value="40"
+             oninput="document.getElementById('conf-val').textContent = this.value + '%'">
+      <span id="conf-val" style="font-size:0.75rem;color:#aaa">40%</span>
+    </label>
+    <label>
+      Skip frames
+      <input id="skip" type="range" min="1" max="15" value="5"
+             oninput="document.getElementById('skip-val').textContent = this.value">
+      <span id="skip-val" style="font-size:0.75rem;color:#aaa">5</span>
+    </label>
+    <button id="btn-start" onclick="startDetection()">▶ Démarrer</button>
+    <button id="btn-stop" onclick="stopDetection()" style="display:none">⏹ Arrêter</button>
+  </div>
+
+  <div class="grid">
+    <div id="canvas-wrap">
+      <div id="placeholder">Entrez une URL YouTube et cliquez sur Démarrer</div>
+      <img id="canvas" style="display:none" alt="Frame annotée">
+    </div>
+    <div class="stats">
+      <div class="stat"><span>Status</span><span id="s-status">—</span></div>
+      <div class="stat"><span>Frames traitées</span><span id="s-frames">0</span></div>
+      <div class="stat"><span>Détections totales</span><span id="s-dets">0</span></div>
+      <div class="stat"><span>Chunks indexés</span><span id="s-chunks">—</span></div>
+      <div class="stat"><span>Job ID</span><span id="s-job" style="font-size:0.7rem;word-break:break-all">—</span></div>
+    </div>
+  </div>
+
+  <div id="log"></div>
+
+  <div class="chat-section">
+    <h2>💬 Interroger les détections (RAG)</h2>
+    <div class="chat-row">
+      <input id="chat-input" type="text"
+             placeholder="Ex: Quand a-t-on vu une voiture dans la vidéo ?"
+             onkeydown="if(event.key==='Enter') askRag()">
+      <button onclick="askRag()" style="background:#1565c0;color:#fff">Demander</button>
+    </div>
+    <div id="chat-answer">Les réponses apparaîtront ici…</div>
+  </div>
+
+  <script>
+    const API = '/api';
+    let ws = null;
+    let currentJobId = null;
+    let statusPoll = null;
+
+    function log(msg, cls = '') {
+      const el = document.getElementById('log');
+      const line = document.createElement('div');
+      if (cls) line.className = cls;
+      line.textContent = new Date().toLocaleTimeString() + ' — ' + msg;
+      el.appendChild(line);
+      el.scrollTop = el.scrollHeight;
+      // Limite à 200 lignes
+      while (el.children.length > 200) el.removeChild(el.firstChild);
+    }
+
+    async function startDetection() {
+      const url = document.getElementById('yt-url').value.trim();
+      if (!url) { alert('Entrez une URL YouTube'); return; }
+
+      document.getElementById('btn-start').disabled = true;
+      document.getElementById('btn-stop').style.display = '';
+      document.getElementById('placeholder').style.display = 'none';
+      document.getElementById('canvas').style.display = 'block';
+
+      log('Lancement du job de détection…', 'log-info');
+
+      const conf = parseInt(document.getElementById('conf').value) / 100;
+      const skip = parseInt(document.getElementById('skip').value);
+
+      const res = await fetch(`${API}/detect/url`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, confidence: conf, frame_skip: skip, max_frames: 1000 }),
+      }).then(r => r.json());
+
+      currentJobId = res.job_id;
+      document.getElementById('s-job').textContent = currentJobId.slice(0, 8) + '…';
+      document.getElementById('s-status').textContent = 'pending';
+      log(`Job ID : ${currentJobId}`, 'log-info');
+
+      // Ouvrir le WebSocket
+      openWebSocket(currentJobId);
+
+      // Poll de statut (pour indexed_chunks)
+      statusPoll = setInterval(() => pollStatus(currentJobId), 3000);
+    }
+
+    function openWebSocket(jobId) {
+      const wsProto = location.protocol === 'https:' ? 'wss' : 'ws';
+      const wsUrl = `${wsProto}://${location.host}/detect/stream/${jobId}`;
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen  = () => log('WebSocket connecté', 'log-info');
+      ws.onerror = (e) => log('Erreur WebSocket', 'log-err');
+      ws.onclose = () => log('WebSocket fermé');
+
+      ws.onmessage = (event) => {
+        const msg = JSON.parse(event.data);
+
+        if (msg.type === 'ping') return;
+
+        if (msg.type === 'frame') {
+          // Display the annotated frame
+          if (msg.jpeg_b64) {
+            document.getElementById('canvas').src = 'data:image/jpeg;base64,' + msg.jpeg_b64;
+          }
+          document.getElementById('s-frames').textContent  = msg.frames_processed;
+          document.getElementById('s-dets').textContent    = msg.total_detections;
+          document.getElementById('s-status').textContent  = 'running';
+
+          if (msg.detections && msg.detections.length > 0) {
+            const labels = msg.detections.map(d => `${d.label} (${(d.score*100).toFixed(0)}%)`).join(', ');
+            log(`Frame ${msg.frame_id} @${msg.timestamp.toFixed(1)}s : ${labels}`, 'log-det');
+          }
+        }
+
+        if (msg.type === 'done') {
+          log('✅ Stream terminé', 'log-info');
+          document.getElementById('s-status').textContent = 'done';
+          stopDetection();
+        }
+
+        if (msg.type === 'error') {
+          log('❌ Erreur dans le pipeline', 'log-err');
+          document.getElementById('s-status').textContent = 'error';
+          stopDetection();
+        }
+      };
+    }
+
+    async function pollStatus(jobId) {
+      const s = await fetch(`${API}/detect/status/${jobId}`).then(r => r.json());
+      document.getElementById('s-chunks').textContent = s.indexed_chunks ?? '—';
+      if (s.status === 'done' || s.status === 'error') clearInterval(statusPoll);
+    }
+
+    function stopDetection() {
+      if (ws) { ws.close(); ws = null; }
+      if (statusPoll) { clearInterval(statusPoll); statusPoll = null; }
+      document.getElementById('btn-start').disabled = false;
+      document.getElementById('btn-stop').style.display = 'none';
+    }
+
+    async function askRag() {
+      const q = document.getElementById('chat-input').value.trim();
+      if (!q) return;
+      document.getElementById('chat-answer').textContent = '…';
+      const res = await fetch(`${API}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q, top_k: 5 }),
+      }).then(r => r.json());
+      document.getElementById('chat-answer').textContent = res.answer || 'Pas de réponse.';
+    }
+  </script>
+</body>
+</html>

@@ -1,0 +1,156 @@
+version: "3.9"
+
+services:
+
+  # ── 1. Ollama server (starts cleanly, reliable healthcheck) ────────────
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    environment:
+      - OLLAMA_NUM_CTX=2048
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - rag-net
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s   # just enough time for the Ollama server to start
+
+
+  # ── 2. Init: pull + model creation (runs only once) ────────
+  ollama-init:
+    image: ollama/ollama:latest
+    container_name: ollama-init
+    restart: "no"           # do not restart once finished
+    entrypoint: ["/bin/sh", "-c", "
+      echo '⏳ Attente du serveur Ollama…' &&
+      until ollama list > /dev/null 2>&1; do sleep 3; done &&
+      echo '✅ Ollama prêt — pull llama3.2:1b…' &&
+      ollama pull llama3.2:1b &&
+      echo '🔧 Création du modèle ctx2k…' &&
+      printf 'FROM llama3.2:1b\nPARAMETER num_ctx 1024\n' > /tmp/Modelfile &&
+      ollama create llama3.2:1b-ctx2k -f /tmp/Modelfile &&
+      echo '🎉 Modèle prêt.'
+    "]
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+    depends_on:
+      ollama:
+        condition: service_healthy
+    networks:
+      - rag-net
+
+
+  # ── 3. RAG API ────────────────────────────────────────────────────────────
+  rag-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runtime
+    user: root
+    container_name: rag-llamaindex
+    restart: unless-stopped
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:1b-ctx2k}
+      LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.1}
+      EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
+      CHUNK_SIZE: ${CHUNK_SIZE:-512}
+      CHUNK_OVERLAP: ${CHUNK_OVERLAP:-64}
+      CHROMA_PATH: /app/chroma_db
+      PORT: ${PORT:-8000}
+      WORKERS: ${WORKERS:-4}
+      YT_DLP_JS_RUNTIMES: nodejs
+      YT_COOKIES_PATH: /app/cookies.txt
+      YOLO_TELEMETRY: "False"
+      YOLO_MODEL: ${YOLO_MODEL:-yolov8n.pt}
+      ANONYMIZED_TELEMETRY: "False"
+    volumes:
+      - chroma_data:/app/chroma_db
+      - ./data:/app/data:ro
+      #- ./cookies.txt:/app/cookies.txt:ro
+      #- ~/.mozilla/firefox:/root/.mozilla/firefox:ro
+      - hf_cache:/root/.cache/huggingface
+      - yolo_cache:/root/.cache/ultralytics
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 20s
+      timeout: 10s
+      retries: 15
+      start_period: 300s  # HuggingFace model download peut prendre 3-5 min
+    depends_on:
+      ollama:
+        condition: service_healthy
+      ollama-init:
+        condition: service_completed_successfully
+    networks:
+      - rag-net
+
+
+  # ── 4. Nginx (frontend) ───────────────────────────────────────────────────
+  nginx:
+    image: nginx:alpine
+    container_name: rag-nginx
+    restart: unless-stopped
+    ports:
+      - "${NGINX_PORT:-8080}:8080"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./client_demo.html:/usr/share/nginx/html/client_demo.html:ro
+    depends_on:
+      rag-api:
+        condition: service_healthy
+    networks:
+      - rag-net
+
+
+  # ── Ollama GPU (profil optionnel : docker compose --profile gpu up) ───────
+  ollama-gpu:
+    image: ollama/ollama:latest
+    container_name: ollama-gpu
+    restart: unless-stopped
+    profiles: ["gpu"]
+    environment:
+      - OLLAMA_NUM_CTX=2048
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - rag-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+
+volumes:
+  chroma_data:
+    driver: local
+  hf_cache:
+    driver: local
+  ollama_data:
+    driver: local
+  yolo_cache:
+    driver: local
+
+networks:
+  rag-net:
+    driver: bridge

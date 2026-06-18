@@ -1,0 +1,11 @@
+# Add to docker-compose, the rag-api service already inherits everything
+# YOLOv8n downloads automatically on first call (~6MB)
+
+# Start a detection
+curl -X POST http://localhost:8000/detect/url \
+  -H "Content-Type: application/json" \
+  -d '{"url": "https://youtube.com/watch?v=VIDEO_ID", "frame_skip": 5}'
+
+# Then query in RAG
+curl -X POST http://localhost:8000/chat \
+  -d '{"question": "Quels objets ont été détectés le plus souvent ?"}'
