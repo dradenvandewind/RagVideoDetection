@@ -147,15 +147,25 @@ resource "aws_ebs_volume" "data" {
 }
 
 # ──────────────────────────────────────────────
-# EC2 Instance — t4g.small (Graviton2 ARM64)
+# EC2 Instance — spot
 # ──────────────────────────────────────────────
 
 resource "aws_instance" "rag_server" {
   ami                    = data.aws_ami.ubuntu_arm64.id
-  instance_type          = "t4g.small"
+  instance_type          = var.instance_type
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.rag_api.id]
   key_name               = aws_key_pair.deployer.key_name
+
+  # ── Spot config ──────────────────────────────
+  instance_market_options {
+    market_type = "spot"
+    spot_options {
+      max_price                      = "0.008"   # Prix max en $ (t4g.small Spot ~0.005/h)
+      spot_instance_type             = "persistent"
+      instance_interruption_behavior = "stop"    # stop plutôt que terminate
+    }
+  }
 
   root_block_device {
     volume_size           = 45
@@ -164,17 +174,9 @@ resource "aws_instance" "rag_server" {
     encrypted             = true
   }
 
-  # User data minimal — Ansible s'occupe du reste
-  user_data = <<-EOF
-    #!/bin/bash
-    apt-get update -y
-    apt-get install -y python3 python3-pip
-  EOF
-
   tags = {
     Name        = "${var.project_name}-server"
     Environment = var.environment
-    Project     = var.project_name
   }
 }
 
