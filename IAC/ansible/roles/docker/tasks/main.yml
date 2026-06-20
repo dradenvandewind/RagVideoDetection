@@ -1,0 +1,96 @@
+---
+# ──────────────────────────────────────────────
+# Role: docker
+# Installe Docker Engine (ARM64) + plugin Compose
+# Source officielle : https://docs.docker.com/engine/install/ubuntu/
+# ──────────────────────────────────────────────
+
+- name: Remove legacy Docker packages if present
+  apt:
+    name:
+      - docker.io
+      - docker-doc
+      - docker-compose
+      - podman-docker
+      - containerd
+      - runc
+    state: absent
+    purge: true
+
+- name: Create Docker apt keyring directory
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Download Docker GPG key
+  get_url:
+    url: https://download.docker.com/linux/ubuntu/gpg
+    dest: /etc/apt/keyrings/docker.asc
+    mode: "0644"
+    force: false
+
+- name: Add Docker apt repository
+  deb822_repository:
+    name: docker
+    types: [deb]
+    uris: https://download.docker.com/linux/ubuntu
+    suites: "{{ ansible_distribution_release }}"
+    components: [stable]
+    signed_by: /etc/apt/keyrings/docker.asc
+    state: present
+
+- name: Install Docker Engine and Compose plugin
+  apt:
+    name:
+      - docker-ce
+      - docker-ce-cli
+      - containerd.io
+      - docker-buildx-plugin
+      - docker-compose-plugin   # "docker compose" (v2) — no separate binary needed
+    state: present
+    update_cache: true
+
+- name: Enable and start Docker service
+  systemd:
+    name: docker
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Add ubuntu user to docker group
+  user:
+    name: ubuntu
+    groups: docker
+    append: true
+
+- name: Add raguser to docker group
+  user:
+    name: "{{ app_user }}"
+    groups: docker
+    append: true
+
+- name: Configure Docker daemon (log rotation + storage driver)
+  copy:
+    dest: /etc/docker/daemon.json
+    content: |
+      {
+        "log-driver": "json-file",
+        "log-opts": {
+          "max-size": "50m",
+          "max-file": "3"
+        },
+        "storage-driver": "overlay2"
+      }
+    mode: "0644"
+  notify: Restart Docker
+
+- name: Verify Docker is functional
+  command: docker info
+  register: docker_info
+  changed_when: false
+
+- name: Show Docker version
+  debug:
+    msg: "{{ docker_info.stdout_lines | select('search', 'Server Version') | list }}"
+

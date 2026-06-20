@@ -1,0 +1,131 @@
+---
+# ──────────────────────────────────────────────
+# Role: app
+# - Copie le code source sur le serveur
+# - Génère le fichier .env
+# - Lance docker compose up --build -d
+# ──────────────────────────────────────────────
+
+# ── 1. Copie du code source ──────────────────
+
+- name: Synchronize project files to server
+  synchronize:
+    src: "{{ playbook_dir }}/../"      # Racine du projet (là où est docker-compose.yml)
+    dest: "{{ app_dir }}/"
+    rsync_opts:
+      - "--exclude=.git"
+      - "--exclude=__pycache__"
+      - "--exclude=*.pyc"
+      - "--exclude=.env"               # Ne jamais écraser le .env existant
+      - "--exclude=chroma_db/"
+      - "--exclude=data/"
+    delete: false                       # Ne pas supprimer les données existantes
+
+# ── 2. Fichier d'environnement ───────────────
+
+- name: Deploy .env file from template
+  template:
+    src: env.j2
+    dest: "{{ app_dir }}/.env"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: "0600"                        # Contient des secrets
+
+# ── 3. Permissions ───────────────────────────
+
+- name: Set ownership of app directory
+  file:
+    path: "{{ app_dir }}"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    recurse: true
+
+# ── 4. Symlinks volumes persistants (EBS) ────
+
+- name: Ensure chroma_db points to EBS volume
+  file:
+    src: "{{ ebs_mount_point }}/chroma_db"
+    dest: "{{ app_dir }}/chroma_db"
+    state: link
+    force: true
+
+# ── 5. docker-compose.override.yml (bind mounts EBS) ──
+
+- name: Deploy docker-compose.override.yml
+  template:
+    src: docker-compose.override.yml.j2
+    dest: "{{ app_dir }}/docker-compose.override.yml"
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: "0644"
+
+# ── 6. Pull/Build images ─────────────────────
+
+# - name: Pull base images
+#   community.docker.docker_compose_v2:
+#     project_src: "{{ app_dir }}"
+#     pull: always
+#     state: present
+#   ignore_errors: true   # Si l'image n'existe pas encore sur le registry
+
+- name: Check if repo exists
+  stat:
+    path: /opt/rag-llamaindex/.git
+  register: git_repo
+
+- name: Remove directory if not a git repo
+  file:
+    path: /opt/rag-llamaindex
+    state: absent
+  when: not git_repo.stat.exists
+
+- name: Fix git safe directory
+  command: git config --global --add safe.directory /opt/rag-llamaindex
+  become: true
+  become_user: "{{ app_user }}"
+
+- name: Clone repository
+  git:
+    repo: "{{ app_repo_url }}"
+    dest: /opt/rag-llamaindex
+    version: main
+    force: true
+  become: true
+  become_user: "{{ app_user }}"
+
+- name: Build and start services (docker compose up --build -d)
+  community.docker.docker_compose_v2:
+    project_src: "{{ app_dir }}"
+    build: always
+    state: present
+    wait: true
+    wait_timeout: 300
+
+# ── 7. Systemd unit (auto-start au reboot) ───
+
+- name: Deploy systemd service for docker compose
+  template:
+    src: rag-api.service.j2
+    dest: /etc/systemd/system/rag-api.service
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Enable rag-api service
+
+# ── 8. Healthcheck ───────────────────────────
+
+- name: Wait for API to be healthy
+  uri:
+    url: "http://localhost:{{ api_port }}/health"
+    method: GET
+    status_code: 200
+  register: health_result
+  retries: 20
+  delay: 15
+  until: health_result.status == 200
+  delegate_to: "{{ inventory_hostname }}"
+  become: false
+  
+- name: Show health response
+  debug:
+    var: health_result.json

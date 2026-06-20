@@ -1,0 +1,51 @@
+---
+# ──────────────────────────────────────────────────────────────
+# Main playbook — RAG LlamaIndex deployment
+# Usage:
+#   ansible-playbook -i inventory.ini site.yml
+#   ansible-playbook -i inventory.ini site.yml --tags docker
+#   ansible-playbook -i inventory.ini site.yml --tags app
+# ──────────────────────────────────────────────────────────────
+
+- name: Deploy RAG LlamaIndex on AWS t4g.small
+  hosts: rag_servers
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - vars/main.yml
+
+  pre_tasks:
+    - name: Wait for SSH to be available
+      wait_for_connection:
+        delay: 10
+        timeout: 120
+
+    - name: Gather facts
+      setup:
+
+    - name: Assert ARM64 architecture
+      assert:
+        that: ansible_architecture == "aarch64"
+        fail_msg: "This playbook targets ARM64 (Graviton). Got: {{ ansible_architecture }}"
+
+    - name: Update apt cache
+      apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+  roles:
+    - role: system       # Base system setup + EBS mount
+      tags: [system]
+    - role: docker       # Docker Engine + Docker Compose plugin
+      tags: [docker]
+    - role: app          # Deploy docker-compose project
+      tags: [app]
+
+  post_tasks:
+    - name: Display API URL
+      debug:
+        msg: |
+          ✅ Deployment complete!
+          API:  http://{{ ansible_host }}:{{ api_port }}/health
+          Docs: http://{{ ansible_host }}:{{ api_port }}/docs

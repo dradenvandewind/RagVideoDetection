@@ -1,0 +1,12 @@
+# ── Généré par Ansible — bind mounts vers le volume EBS persistant ──
+version: "3.9"
+
+services:
+  rag-api:
+    volumes:
+      - {{ ebs_mount_point }}/chroma_db:/app/chroma_db
+      - {{ ebs_mount_point }}/hf_cache:/root/.cache/huggingface
+
+  ollama:
+    volumes:
+      - {{ ebs_mount_point }}/ollama_data:/root/.ollama

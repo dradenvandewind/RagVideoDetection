@@ -1,0 +1,90 @@
+---
+# ──────────────────────────────────────────────
+# Role: system
+# - Paquets de base
+# - Montage du volume EBS persistant
+# - Création de l'utilisateur applicatif
+# ──────────────────────────────────────────────
+
+- name: Install base packages
+  apt:
+    name:
+      - curl
+      - ca-certificates
+      - gnupg
+      - lsb-release
+      - git
+      - unzip
+      - htop
+      - ncdu
+      - parted
+      - e2fsprogs
+      - python3-pip
+      - acl            # Needed for Ansible become + file ACLs
+    state: present
+    update_cache: true
+
+- name: Set timezone to Europe/Paris
+  timezone:
+    name: Europe/Paris
+
+# ──────────────────────────────────────────────
+# EBS Volume setup (/dev/nvme1n1 → /data)
+# ──────────────────────────────────────────────
+
+- name: Check if EBS volume already has a filesystem
+  command: blkid -o value -s TYPE {{ ebs_device }}
+  register: ebs_fstype
+  failed_when: false
+  changed_when: false
+
+- name: Create ext4 filesystem on EBS volume (first run only)
+  filesystem:
+    fstype: ext4
+    dev: "{{ ebs_device }}"
+  when: ebs_fstype.stdout == ""
+
+- name: Create EBS mount point
+  file:
+    path: "{{ ebs_mount_point }}"
+    state: directory
+    mode: "0755"
+
+- name: Mount EBS volume
+  mount:
+    path: "{{ ebs_mount_point }}"
+    src: "{{ ebs_device }}"
+    fstype: ext4
+    opts: defaults,nofail
+    state: mounted
+
+- name: Create persistent data subdirectories on EBS
+  file:
+    path: "{{ ebs_mount_point }}/{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - chroma_db
+    - hf_cache
+    - ollama_data
+
+# ──────────────────────────────────────────────
+# Application user
+# ──────────────────────────────────────────────
+
+- name: Create application user (raguser uid=1001)
+  user:
+    name: "{{ app_user }}"
+    uid: "{{ app_uid }}"
+    shell: /bin/bash
+    create_home: true
+    groups: [docker]      # Ajouté après le rôle docker
+    append: true
+
+- name: Create app directory
+  file:
+    path: "{{ app_dir }}"
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: "0755"
