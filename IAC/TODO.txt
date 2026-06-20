@@ -1,0 +1,7 @@
+I need to test it on a new, more powerful instance with at least 8 vCPUs and 16 GB—or even 24 or 32 GB—of RAM to install all the Ollama and Yolo models and fully evaluate the RAG.
+
+Optimize the pipeline using an optimized GStreamer pipeline.
+
+Convert the app to Cython.
+
+Optimize response time. 
