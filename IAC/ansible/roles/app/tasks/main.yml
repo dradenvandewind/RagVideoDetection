@@ -79,6 +79,29 @@
     state: absent
   when: not git_repo.stat.exists
 
+- name: Check if repo exists
+  stat:
+    path: /opt/rag-llamaindex/.git
+  register: git_repo
+
+- name: Remove directory if not a git repo
+  file:
+    path: /opt/rag-llamaindex
+    state: absent
+  when: not git_repo.stat.exists
+  become: true
+  become_user: root
+
+- name: Create app directory with correct ownership
+  file:
+    path: /opt/rag-llamaindex
+    state: directory
+    owner: "{{ app_user }}"
+    group: "{{ app_user }}"
+    mode: "0755"
+  become: true
+  become_user: root
+
 - name: Fix git safe directory
   command: git config --global --add safe.directory /opt/rag-llamaindex
   become: true
@@ -92,7 +115,7 @@
     force: true
   become: true
   become_user: "{{ app_user }}"
-
+   
 - name: Build and start services (docker compose up --build -d)
   community.docker.docker_compose_v2:
     project_src: "{{ app_dir }}"
