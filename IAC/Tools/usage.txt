@@ -1,0 +1,8 @@
+# Default instance (g5g.2xlarge)
+python aws_spot_price_finder.py
+
+# Another instance, top 5 only
+python aws_spot_price_finder.py --top 5 c5.xlarge
+
+# More parallelism (default: 20 regions concurrently)
+python aws_spot_price_finder.py --concurrency 30 p3.2xlarge
