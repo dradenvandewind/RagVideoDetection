@@ -1,6 +1,6 @@
 # Copier ce fichier en terraform.tfvars et adapter les valeurs
 
-aws_region           = "eu-west-3"          # Paris (Graviton disponible)
+aws_region           = "ap-northeast-2"          # Paris (Graviton disponible)
 project_name         = "rag-llamaindex"
 environment          = "prod"
 
@@ -13,4 +13,4 @@ allowed_api_cidr     = "0.0.0.0/0"
 
 api_port             = 8000
 data_volume_size_gb  = 50                   # ChromaDB + HF models cache
-instance_type = "t4g.small"
+instance_type = "g5g.2xlarge"
