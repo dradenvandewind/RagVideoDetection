@@ -3,6 +3,12 @@ variable "aws_region" {
   type        = string
   default     = "eu-west-3" # Paris
 }
+variable "spot_max_price" {
+  description = "Prix maximum Spot en USD/heure"
+  type        = string
+  default     = "0.012"
+}
+
 
 variable "project_name" {
   description = "Project name (used in resource names and tags)"
