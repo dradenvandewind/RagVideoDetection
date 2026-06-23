@@ -8,8 +8,23 @@ terraform {
   }
 }
 
+# provider "aws" {
+#   region = var.aws_region
+# }
+
 provider "aws" {
   region = var.aws_region
+
+  skip_requesting_account_id  = false
+  skip_credentials_validation = false
+  skip_metadata_api_check     = false
+
+  default_tags {
+    tags = {
+      Project     = var.project_name
+      Environment = var.environment
+    }
+  }
 }
 
 # ──────────────────────────────────────────────
@@ -112,6 +127,22 @@ resource "aws_security_group" "rag_api" {
     cidr_blocks = [var.allowed_api_cidr]
   }
 
+  ingress {
+  description = "HTTP"
+  from_port   = 80
+  to_port     = 80
+  protocol    = "tcp"
+  cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  ingress {
+  description = "HTTP Alt"
+  from_port   = 8080
+  to_port     = 8080
+  protocol    = "tcp"
+  cidr_blocks = ["0.0.0.0/0"]
+  }
+
   egress {
     from_port   = 0
     to_port     = 0
@@ -161,9 +192,9 @@ resource "aws_instance" "rag_server" {
   instance_market_options {
     market_type = "spot"
     spot_options {
-      max_price                      = "0.008"   # Prix max en $ (t4g.small Spot ~0.005/h)
-      spot_instance_type             = "persistent"
-      instance_interruption_behavior = "stop"    # stop plutôt que terminate
+      max_price                      = "0.5"   # Prix max en $ (t4g.small Spot ~0.005/h)
+      spot_instance_type             = "one-time"
+      instance_interruption_behavior = "terminate"    # stop plutôt que terminate
     }
   }
 
