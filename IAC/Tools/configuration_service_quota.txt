@@ -1,0 +1,58 @@
+ID=
+https://$ID-piavueil.eu-west-3.console.aws.amazon.com/servicequotas/home/dashboard
+
+
+
+First, we need to find the region offering the lowest price for a specific instance type.
+
+python3 aws_spot_price_finder.py
+
+"""
+Instance : g5g.2xlarge
+Timestamp: 2026-06-23T07:58:52Z
+Fetching regions...
+17 regions found. Querying in progress...
+
+REGION               ZONE                           PRICE ($/h)
+---------------------------------------------------------------
+ap-northeast-2       ap-northeast-2c                $0.145300
+ap-northeast-2       ap-northeast-2a                $0.148000
+us-west-2            us-west-2c                     $0.156200
+ap-northeast-1       ap-northeast-1d                $0.162300
+ap-northeast-1       ap-northeast-1c                $0.166600
+eu-central-1         eu-central-1c                  $0.185600
+us-west-2            us-west-2a                     $0.205700
+us-east-1            us-east-1d                     $0.218800
+us-east-1            us-east-1b                     $0.222600
+us-west-2            us-west-2b                     $0.226700
+us-east-1            us-east-1c                     $0.229600
+ap-southeast-1       ap-southeast-1b                $0.244800
+us-east-1            us-east-1a                     $0.293200
+ap-southeast-1       ap-southeast-1a                $0.330000
+
+=== CHEAPEST ===
+ap-northeast-2       ap-northeast-2c                $0.145300
+
+"""
+
+What to do with an admin account (AWS Console or root):
+
+Go to console.aws.amazon.com → log in as root or with an admin user
+Service Quotas → EC2 → “All G and VT Spot Instance Requests” → Request increase → 8 vCPUs
+
+
+check your new quota for this instance
+get_quota_instance.sh
+
+
+
+
+Each instance INSTANCE_ID.  has a type; in this case, an instance with 8 vGPUs and a GPU has this 
+
+L-3819A6DF  is id for Gpu Spot Instance
+
+
+https://$ID-piavueil.ap-northeast-2.console.aws.amazon.com/servicequotas/home/services/ec2/quotas/L-3819A6DF
+
+https://$ID-piavueil.eu-west-3.console.aws.amazon.com/servicequotas/home/services/ec2/quotas/L-3819A6DF
+
