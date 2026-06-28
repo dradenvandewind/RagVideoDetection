@@ -12,7 +12,7 @@ allowed_ssh_cidr     = "0.0.0.0/0"
 allowed_api_cidr     = "0.0.0.0/0"
 
 api_port             = 8000
-data_volume_size_gb  = 50                   # ChromaDB + HF models cache
+data_volume_size_gb  = 120                   # ChromaDB + HF models cache
 instance_type = "g5g.2xlarge"
 
 
