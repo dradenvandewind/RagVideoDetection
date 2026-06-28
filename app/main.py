@@ -63,7 +63,7 @@ async def lifespan(app: FastAPI):
 
     Settings.llm = Ollama(
         model=os.getenv("OLLAMA_MODEL", "llama3.2:1b"),
-        base_url=os.getenv("OLLAMA_BASE_URL", "http://ollama:11434"),
+        base_url=os.getenv("OLLAMA_BASE_URL", "http://ollama-gpu:11434"),
         temperature=float(os.getenv("LLM_TEMPERATURE", "0.1")),
         request_timeout=300.0,
     )
