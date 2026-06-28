@@ -1,12 +1,12 @@
 variable "aws_region" {
   description = "AWS region"
   type        = string
-  default     = "eu-west-3" # Paris
+  default     = "ap-northeast-2" # Paris
 }
 variable "spot_max_price" {
   description = "Prix maximum Spot en USD/heure"
   type        = string
-  default     = "0.012"
+  default     = "0.018"
 }
 
 

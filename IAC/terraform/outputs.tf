@@ -28,7 +28,9 @@ output "ssh_command" {
   value       = "ssh -i ${var.ssh_private_key_path} ubuntu@${aws_eip.rag_server.public_ip}"
 }
 
+
 output "ami_used" {
-  description = "Ubuntu ARM64 AMI used"
-  value       = data.aws_ami.ubuntu_arm64.id
+  description = "DLAMI ARM64 AMI ID (via SSM)"
+  value       = data.aws_ssm_parameter.dlami_arm64.value
+  sensitive   = true
 }

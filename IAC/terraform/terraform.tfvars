@@ -14,3 +14,6 @@ allowed_api_cidr     = "0.0.0.0/0"
 api_port             = 8000
 data_volume_size_gb  = 50                   # ChromaDB + HF models cache
 instance_type = "g5g.2xlarge"
+
+
+spot_max_price       = "0.20"

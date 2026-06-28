@@ -1,0 +1,94 @@
+---
+# ansible/roles/nvidia_gpu/tasks/main.yml
+#
+# Migration de 2-install-docker-nvidia.sh en tasks Ansible idempotentes.
+# Cible : Ubuntu 22.04 ARM64 (g5g = Graviton2 + T4G GPU)
+
+# ── 1. Vérification driver host ──────────────────────────────────────────────
+
+- name: Vérifier que le driver NVIDIA est présent sur le host
+  command: nvidia-smi
+  register: nvidia_smi_check
+  changed_when: false
+  failed_when: nvidia_smi_check.rc != 0
+  # ⚠️  Si ça échoue ici : l'AMI n'a pas de driver préinstallé.
+  #    Sur g5g, utiliser l'AMI Deep Learning Base ou installer le driver avant.
+
+- name: Afficher version du driver NVIDIA
+  debug:
+    msg: "{{ nvidia_smi_check.stdout_lines[0] }}"
+
+# ── 2. Pré-requis système ────────────────────────────────────────────────────
+
+- name: Installer les pré-requis apt
+  apt:
+    name:
+      - curl
+      - gnupg
+      - ca-certificates
+    state: present
+    update_cache: true
+
+# ── 3. Clé GPG NVIDIA Container Toolkit ─────────────────────────────────────
+
+- name: Créer le répertoire keyrings
+  file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Télécharger la clé GPG NVIDIA Container Toolkit
+  shell: |
+    curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey | \
+    gpg --dearmor -o /etc/apt/keyrings/nvidia-container-toolkit.gpg
+  args:
+    creates: /etc/apt/keyrings/nvidia-container-toolkit.gpg
+  # creates= rend la tâche idempotente (ne re-télécharge pas si déjà présent)
+
+# ── 4. Repository NVIDIA ─────────────────────────────────────────────────────
+
+- name: Obtenir la distribution OS
+  shell: ". /etc/os-release && echo $ID$VERSION_ID"
+  register: os_distribution
+  changed_when: false
+
+- name: Ajouter le repository NVIDIA Container Toolkit
+  shell: |
+    curl -s -L \
+      https://nvidia.github.io/libnvidia-container/{{ os_distribution.stdout }}/libnvidia-container.list | \
+    sed 's#deb https://#deb [signed-by=/etc/apt/keyrings/nvidia-container-toolkit.gpg] https://#g' | \
+    tee /etc/apt/sources.list.d/nvidia-container-toolkit.list > /dev/null
+  args:
+    creates: /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+# ── 5. Installation NVIDIA Container Toolkit ─────────────────────────────────
+
+- name: Installer nvidia-container-toolkit
+  apt:
+    name: nvidia-container-toolkit
+    state: present
+    update_cache: true
+
+# ── 6. Configurer le runtime Docker ──────────────────────────────────────────
+
+- name: Vérifier si le runtime NVIDIA est déjà configuré dans Docker
+  shell: docker info --format '{{ "{{" }}.Runtimes{{ "}}" }}' 2>/dev/null | grep -q nvidia
+  register: nvidia_runtime_check
+  changed_when: false
+  failed_when: false
+
+- name: Configurer Docker pour utiliser le runtime NVIDIA
+  command: nvidia-ctk runtime configure --runtime=docker
+  when: nvidia_runtime_check.rc != 0
+  notify: Restart Docker
+
+- name: Flush handlers (redémarrer Docker si nécessaire)
+  meta: flush_handlers
+
+# ── 7. Vérification finale ────────────────────────────────────────────────────
+
+- name: S'assurer que Docker tourne
+  systemd:
+    name: docker
+    state: started
+    enabled: true
