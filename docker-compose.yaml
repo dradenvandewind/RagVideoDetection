@@ -3,24 +3,24 @@ version: "3.9"
 services:
 
   # ── 1. Ollama server (starts cleanly, reliable healthcheck) ────────────
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    restart: unless-stopped
-    environment:
-      - OLLAMA_NUM_CTX=2048
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    networks:
-      - rag-net
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 15s   # just enough time for the Ollama server to start
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: ollama
+  #   restart: unless-stopped
+  #   environment:
+  #     - OLLAMA_NUM_CTX=2048
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #   networks:
+  #     - rag-net
+  #   healthcheck:
+  #     test: ["CMD", "ollama", "list"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 10
+  #     start_period: 15s   # just enough time for the Ollama server to start
 
 
   # ── 2. Init: pull + model creation (runs only once) ────────
@@ -39,9 +39,9 @@ services:
       echo '🎉 Modèle prêt.'
     "]
     environment:
-      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_HOST=http://ollama-gpu:11434
     depends_on:
-      ollama:
+      ollama-gpu:
         condition: service_healthy
     networks:
       - rag-net
@@ -88,7 +88,7 @@ services:
       retries: 15
       start_period: 300s  # HuggingFace model download peut prendre 3-5 min
     depends_on:
-      ollama:
+      ollama-gpu:
         condition: service_healthy
       ollama-init:
         condition: service_completed_successfully
@@ -118,7 +118,7 @@ services:
     image: ollama/ollama:latest
     container_name: ollama-gpu
     restart: unless-stopped
-    profiles: ["gpu"]
+    #profiles: ["gpu"]
     environment:
       - OLLAMA_NUM_CTX=2048
     ports:
