@@ -55,10 +55,10 @@ variable "api_port" {
 variable "data_volume_size_gb" {
   description = "EBS data volume size in GB (ChromaDB + HuggingFace models cache)"
   type        = number
-  default     = 50
+  default     = 60
 }
 variable "instance_type" {
   description = "EC2 instance type (ARM64 Graviton)"
   type        = string
-  default     = "t4g.medium"
+  default     = "g5g.2xlarge"
 }

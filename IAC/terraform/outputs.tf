@@ -20,7 +20,7 @@ output "docs_url" {
 
 output "client_url" {
   description = "Client url"
-  value       = "http://${aws_eip.rag_server.public_ip}:8080/client_demo.htm"
+  value       = "http://${aws_eip.rag_server.public_ip}:8080/client_demo.html"
 }
 
 output "ssh_command" {
