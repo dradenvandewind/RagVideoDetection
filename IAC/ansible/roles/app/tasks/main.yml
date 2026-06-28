@@ -111,7 +111,7 @@
   git:
     repo: "{{ app_repo_url }}"
     dest: /opt/rag-llamaindex
-    version: main
+    version: master_gpu
     force: true
   become: true
   become_user: "{{ app_user }}"
