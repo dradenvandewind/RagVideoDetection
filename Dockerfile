@@ -43,6 +43,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
+RUN apt-get install -y \
+    nodejs npm \
+    chromium \
+    libglib2.0-0 libnss3 libatk1.0-0 libatk-bridge2.0-0 \
+    libcups2 libdrm2 libxkbcommon0 libxcomposite1 \
+    libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2
+
+RUN apt-get update && apt-get install -y nodejs npm && \
+    npm install -g youtube-po-token-generator
+
 WORKDIR /app
 
 COPY --from=builder /opt/venv /opt/venv

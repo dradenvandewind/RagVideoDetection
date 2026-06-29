@@ -7,6 +7,10 @@ Flow: yt-dlp → m3u8 URL → OpenCV frame-by-frame → YOLOv8 → results
 import asyncio
 import base64
 import logging
+import subprocess
+import json
+import os
+
 import time
 from dataclasses import dataclass, field
 from typing import AsyncGenerator, Any
@@ -84,11 +88,29 @@ class FrameResult:
 #         return url
 # """
 
+def refresh_po_token() -> tuple[str, str]:
+    result = subprocess.run(
+        ["youtube-po-token-generator"],
+        capture_output=True, text=True, timeout=30
+    )
+    data = json.loads(result.stdout)
+    return data["poToken"], data["visitorData"]
+
+# Cache en mémoire, rafraîchi toutes les X requêtes ou X minutes
+_po_token, _visitor_data = refresh_po_token()
+
+
 def _resolve_hls_url(youtube_url: str) -> str:
     ydl_opts = {
         "quiet": True,
-        "no_warnings": True,
+        "extractor_args": {
+            "youtube": {
+                "po_token": [f"web+{_po_token}"],
+                "visitor_data": [_visitor_data],
+            }
+        }
     }
+
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(youtube_url, download=False)

@@ -59,7 +59,7 @@ services:
     ports:
       - "${PORT:-8000}:8000"
     environment:
-      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_BASE_URL: http://ollama-gpu:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:1b-ctx2k}
       LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.1}
       EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
@@ -73,11 +73,13 @@ services:
       YOLO_TELEMETRY: "False"
       YOLO_MODEL: ${YOLO_MODEL:-yolov8n.pt}
       ANONYMIZED_TELEMETRY: "False"
+      YT_PO_TOKEN: ${YT_PO_TOKEN}
+      YT_VISITOR_DATA: ${YT_VISITOR_DATA}
     volumes:
       - chroma_data:/app/chroma_db
       - ./data:/app/data:ro
       #- ./addons.mozilla.org_cookies.txt:/app/cookies.txt:ro
-      - ./yt_cookies.txt:/app/cookies.txt:ro
+      #- ./yt_cookies.txt:/app/cookies.txt:ro
       #- ~/.mozilla/firefox:/root/.mozilla/firefox:ro
       - hf_cache:/root/.cache/huggingface
       - yolo_cache:/root/.cache/ultralytics
