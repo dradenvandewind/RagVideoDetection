@@ -36,15 +36,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxext6 \
     nodejs \
     curl \
-    nodejs \
-    chromium-browser \
-    libglib2.0-0 \
-    libatk1.0-0 libatk-bridge2.0-0 \
-    libcups2 libdrm2 libxkbcommon0 libxcomposite1 \
-    libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 \
-    && rm -rf /var/lib/apt/lists/*
+    # dépendances pour Puppeteer headless
+    libnss3 \
+    libatk1.0-0 \
+    libatk-bridge2.0-0 \
+    libcups2 \
+    libdrm2 \
+    libxkbcommon0 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxrandr2 \
+    libgbm1 \
+    libasound2t64 \
+    && rm -rf /var/lib/apt/lists/* \
+    && corepack enable \
+    && npm install -g youtube-po-token-generator
 
-RUN corepack enable && npm install -g youtube-po-token-generator
 
 WORKDIR /app
 

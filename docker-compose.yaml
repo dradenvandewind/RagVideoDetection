@@ -53,6 +53,7 @@ services:
       context: .
       dockerfile: Dockerfile
       shm_size: '1024mb'
+      mem_limit: 8g
       target: runtime
     user: root
     container_name: rag-llamaindex
