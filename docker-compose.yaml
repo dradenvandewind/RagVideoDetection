@@ -53,12 +53,11 @@ services:
       context: .
       dockerfile: Dockerfile
       shm_size: '1024mb'
-      deploy:
+      target: runtime
+    deploy:
       resources:
         limits:
-          memory: 4g
-          
-      target: runtime
+          memory: 4g          
     user: root
     container_name: rag-llamaindex
     restart: unless-stopped
