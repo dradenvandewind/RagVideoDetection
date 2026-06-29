@@ -84,7 +84,7 @@ services:
       - chroma_data:/app/chroma_db
       - ./data:/app/data:ro
       #- ./addons.mozilla.org_cookies.txt:/app/cookies.txt:ro
-      #- ./yt_cookies.txt:/app/cookies.txt:ro
+      - ./yt_cookies.txt:/app/cookies.txt:ro
       #- ~/.mozilla/firefox:/root/.mozilla/firefox:ro
       - hf_cache:/root/.cache/huggingface
       - yolo_cache:/root/.cache/ultralytics

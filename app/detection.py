@@ -11,6 +11,13 @@ import subprocess
 import json
 import os
 
+import subprocess
+import json
+import logging
+import time
+import yt_dlp
+
+
 import time
 from dataclasses import dataclass, field
 from typing import AsyncGenerator, Any
@@ -88,69 +95,117 @@ class FrameResult:
 #         return url
 # """
 
+
+import logging
+import time
+import yt_dlp
+
+logger = logging.getLogger(__name__)
+
+_po_token: str | None = None
+_visitor_data: str | None = None
+_token_fetched_at: float = 0
+_TOKEN_TTL = 3600
+
+
+def _is_token_expired() -> bool:
+    return (time.time() - _token_fetched_at) > _TOKEN_TTL
+
+
 def refresh_po_token() -> tuple[str, str]:
-    result = subprocess.run(
-        ["youtube-po-token-generator"],
-        capture_output=True, text=True, timeout=30
+    """
+    Génère un PO token via le plugin yt-dlp-get-pot.
+    Compatible avec l'API actuelle qui exige un argument 'client'.
+    """
+    opts = {"quiet": True, "skip_download": True}
+
+    with yt_dlp.YoutubeDL(opts) as ydl:
+        ie = ydl.get_info_extractor("Youtube")
+
+        # L'API du plugin attend maintenant un client explicite
+        for client in ("web", "web_creator", "mweb"):
+            try:
+                pot_client = getattr(ie, "_GetPOTClient", None) or getattr(ie, "_pot_client", None)
+                if pot_client and hasattr(pot_client, "_fetch_po_token"):
+                    visitor_data, po_token = pot_client._fetch_po_token(client)
+                    if po_token and visitor_data:
+                        logger.info("PO token obtenu via client '%s'", client)
+                        return po_token, visitor_data
+            except Exception as e:
+                logger.debug("Client '%s' échoué : %s", client, e)
+                continue
+
+    raise RuntimeError(
+        "Plugin PO token indisponible ou aucun client fonctionnel. "
+        "Vérifiez : pip install yt-dlp-get-pot bgutil-ytdlp-pot-provider "
+        "et installez deno : https://deno.land"
     )
-    data = json.loads(result.stdout)
-    return data["poToken"], data["visitorData"]
 
-# Cache en mémoire, rafraîchi toutes les X requêtes ou X minutes
-_po_token, _visitor_data = refresh_po_token()
 
+def _get_po_token_args() -> dict:
+    global _po_token, _visitor_data, _token_fetched_at
+
+    if _po_token is None or _is_token_expired():
+        try:
+            _po_token, _visitor_data = refresh_po_token()
+            _token_fetched_at = time.time()
+        except Exception as e:
+            logger.warning("PO token indisponible, fallback sans token : %s", e)
+            _po_token = None
+            _visitor_data = None
+
+    if _po_token and _visitor_data:
+        return {
+            "youtube": {
+                "po_token": [f"web+{_po_token}"],
+                "visitor_data": [_visitor_data],
+            }
+        }
+    return {}
+
+
+import os
+
+COOKIES_PATH = os.getenv("YT_COOKIES_PATH", "/app/cookies.txt")
 
 def _resolve_hls_url(youtube_url: str) -> str:
     ydl_opts = {
         "quiet": True,
         "extractor_args": {
             "youtube": {
-                "po_token": [f"web+{_po_token}"],
-                "visitor_data": [_visitor_data],
+                "player_client": ["tv_embedded", "web"],
             }
-        }
+        },
     }
 
+    # Cookies si disponibles (contourne le bot check sans token)
+    if os.path.isfile(COOKIES_PATH):
+        ydl_opts["cookiefile"] = COOKIES_PATH
+        logger.info("Cookies YouTube chargés depuis %s", COOKIES_PATH)
+    else:
+        logger.warning("Pas de cookies YT (%s), risque de bot detection", COOKIES_PATH)
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(youtube_url, download=False)
 
-        formats = info.get("formats", [])
+    formats = info.get("formats", [])
 
-        # 1) PRIORITY: HLS (m3u8)
-        hls_formats = [
-            f for f in formats
-            if f.get("protocol") in ("m3u8", "m3u8_native")
-        ]
+    hls_formats = [f for f in formats if f.get("protocol") in ("m3u8", "m3u8_native")]
+    if hls_formats:
+        return min(hls_formats, key=lambda f: f.get("height") or 10**9)["url"]
 
-        if hls_formats:
-            # choose the lowest resolution for YOLO performance
-            best_hls = min(
-                hls_formats,
-                key=lambda f: f.get("height") or 10**9
-            )
-            return best_hls["url"]
+    dash_formats = [
+        f for f in formats
+        if f.get("protocol") in ("https", "http_dash_segments", "dash")
+    ]
+    if dash_formats:
+        return min(dash_formats, key=lambda f: f.get("height") or 10**9)["url"]
 
-        # 2) FALLBACK : DASH / HTTP progressif
-        dash_formats = [
-            f for f in formats
-            if f.get("protocol") in ("https", "http_dash_segments", "dash")
-        ]
+    url = info.get("url")
+    if url:
+        return url
 
-        if dash_formats:
-            best_dash = min(
-                dash_formats,
-                key=lambda f: f.get("height") or 10**9
-            )
-            return best_dash["url"]
-
-        # 3) dernier fallback yt-dlp
-        url = info.get("url")
-        if url:
-            return url
-
-        raise RuntimeError("No usable stream found")
-
+    raise RuntimeError("No usable stream found")
 # ──────────────────────────────────────────────
 # YOLO detector
 # ──────────────────────────────────────────────

@@ -48,13 +48,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libxfixes3 \
     libxrandr2 \
     libgbm1 \
-    libasound2t64 \
-    npm \
+    libasound2t64 curl \
     && rm -rf /var/lib/apt/lists/* 
     #\
     #&& corepack enable 
-RUN npm install -g youtube-po-token-generator
-
+#RUN npm install -g youtube-po-token-generator
+# Dans ton Dockerfile (image Python/Linux)
+RUN apt-get update && apt-get install -y unzip curl \
+    && curl -fsSL https://deno.land/install.sh | sh \
+    && ln -s /root/.deno/bin/deno /usr/local/bin/deno
+    
+# Vérification
+RUN deno --version
 
 
 WORKDIR /app
