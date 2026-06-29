@@ -51,7 +51,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2t64 \
     && rm -rf /var/lib/apt/lists/* \
     && corepack enable \
-    && npm install -g youtube-po-token-generator
+    && npm install -g ../../docker-compose.yaml
+
 
 
 WORKDIR /app
@@ -62,6 +63,9 @@ ENV PATH="/opt/venv/bin:$PATH"
 RUN ln -sf $(which node) /usr/local/bin/nodejs
 
 COPY app/ ./app/
+COPY app/.env ./app/.env
+
+COPY app/.env .env
 
 RUN mkdir -p /app/chroma_db /app/data
 
@@ -75,7 +79,6 @@ ENV PYTHONUNBUFFERED=1 \
     CHUNK_OVERLAP=64 \
     PORT=8000 \
     WORKERS=4 \
-    # YOLO : désactive la télémétrie Ultralytics
     YOLO_TELEMETRY=False
 
 #COPY cookies.txt /app/cookies.txt
