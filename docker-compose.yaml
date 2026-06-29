@@ -3,24 +3,24 @@ version: "3.9"
 services:
 
   # ── 1. Ollama server (starts cleanly, reliable healthcheck) ────────────
-  # ollama:
-  #   image: ollama/ollama:latest
-  #   container_name: ollama
-  #   restart: unless-stopped
-  #   environment:
-  #     - OLLAMA_NUM_CTX=2048
-  #   ports:
-  #     - "11434:11434"
-  #   volumes:
-  #     - ollama_data:/root/.ollama
-  #   networks:
-  #     - rag-net
-  #   healthcheck:
-  #     test: ["CMD", "ollama", "list"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 10
-  #     start_period: 15s   # just enough time for the Ollama server to start
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    environment:
+      - OLLAMA_NUM_CTX=2048
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - rag-net
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s   # just enough time for the Ollama server to start
 
 
   # ── 2. Init: pull + model creation (runs only once) ────────
@@ -64,7 +64,7 @@ services:
     ports:
       - "${PORT:-8000}:8000"
     environment:
-      OLLAMA_BASE_URL: http://ollama-gpu:11434
+      OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-llama3.2:1b-ctx2k}
       LLM_TEMPERATURE: ${LLM_TEMPERATURE:-0.1}
       EMBED_MODEL: ${EMBED_MODEL:-intfloat/multilingual-e5-small}
@@ -121,32 +121,32 @@ services:
 
 
   # ── Ollama GPU (profil optionnel : docker compose --profile gpu up) ───────
-  ollama-gpu:
-    image: ollama/ollama:latest
-    container_name: ollama-gpu
-    restart: unless-stopped
-    #profiles: ["gpu"]
-    environment:
-      - OLLAMA_NUM_CTX=2048
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    networks:
-      - rag-net
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: 1
-              capabilities: [gpu]
-    healthcheck:
-      test: ["CMD", "ollama", "list"]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 15s
+  # ollama-gpu:
+  #   image: ollama/ollama:latest
+  #   container_name: ollama-gpu
+  #   restart: unless-stopped
+  #   #profiles: ["gpu"]
+  #   environment:
+  #     - OLLAMA_NUM_CTX=2048
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #   networks:
+  #     - rag-net
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   healthcheck:
+  #     test: ["CMD", "ollama", "list"]
+  #     interval: 10s
+  #     timeout: 5s
+  #     retries: 10
+  #     start_period: 15s
 
 
 volumes:
