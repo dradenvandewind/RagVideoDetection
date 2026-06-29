@@ -50,8 +50,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libgbm1 \
     libasound2t64 \
     && rm -rf /var/lib/apt/lists/* \
-    && corepack enable \
-    && npm install -g ../../docker-compose.yaml
+    && corepack enable 
 
 
 
