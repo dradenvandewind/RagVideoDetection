@@ -53,7 +53,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/* 
     #\
     #&& corepack enable 
-#RUN npm install -g youtube-po-token-generator
+RUN npm install -g youtube-po-token-generator
 
 
 
