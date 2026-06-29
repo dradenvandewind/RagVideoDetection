@@ -41,7 +41,7 @@ services:
     environment:
       - OLLAMA_HOST=http://ollama:11434
     depends_on:
-      ollama-gpu:
+      ollama:
         condition: service_healthy
     networks:
       - rag-net
@@ -95,7 +95,7 @@ services:
       retries: 15
       start_period: 300s  # HuggingFace model download peut prendre 3-5 min
     depends_on:
-      ollama-gpu:
+      ollama:
         condition: service_healthy
       ollama-init:
         condition: service_completed_successfully
@@ -121,32 +121,32 @@ services:
 
 
   # ── Ollama GPU (profil optionnel : docker compose --profile gpu up) ───────
-  # ollama-gpu:
-  #   image: ollama/ollama:latest
-  #   container_name: ollama-gpu
-  #   restart: unless-stopped
-  #   #profiles: ["gpu"]
-  #   environment:
-  #     - OLLAMA_NUM_CTX=2048
-  #   ports:
-  #     - "11434:11434"
-  #   volumes:
-  #     - ollama_data:/root/.ollama
-  #   networks:
-  #     - rag-net
-  #   deploy:
-  #     resources:
-  #       reservations:
-  #         devices:
-  #           - driver: nvidia
-  #             count: 1
-  #             capabilities: [gpu]
-  #   healthcheck:
-  #     test: ["CMD", "ollama", "list"]
-  #     interval: 10s
-  #     timeout: 5s
-  #     retries: 10
-  #     start_period: 15s
+  ollama-gpu:
+    image: ollama/ollama:latest
+    container_name: ollama-gpu
+    restart: unless-stopped
+    profiles: ["gpu"]
+    environment:
+      - OLLAMA_NUM_CTX=2048
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - rag-net
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
 
 
 volumes:
