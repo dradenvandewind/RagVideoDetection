@@ -51,6 +51,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libasound2t64 \
     && rm -rf /var/lib/apt/lists/* \
     && corepack enable 
+RUN npm install -g youtube-po-token-generator
 
 
 
