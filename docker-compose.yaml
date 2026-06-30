@@ -60,6 +60,9 @@ services:
           memory: 4g          
     user: root
     container_name: rag-llamaindex
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
     restart: unless-stopped
     ports:
       - "${PORT:-8000}:8000"

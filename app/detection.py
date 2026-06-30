@@ -125,8 +125,14 @@ def _resolve_hls_url(youtube_url: str) -> str:
     } 
     """
     ydl_opts = {
-        "proxy": "socks5://localhost:1080",
         "quiet": True,
+        "no_warnings": True,
+        "proxy": "socks5://host.docker.internal:1080",
+        "extractor_args": {
+            "youtube": {
+                "player_client": ["tv"],
+            }
+        },
     }
     
 
