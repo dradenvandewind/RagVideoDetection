@@ -120,19 +120,15 @@ def _get_writable_cookies_path() -> str | None:
 def _resolve_hls_url(youtube_url: str) -> str:
     ydl_opts = {
         "quiet": True,
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["web", "mweb"], 
-            }
-        },
+        "no_warnings": True,
     }
 
     cookies_path = _get_writable_cookies_path()
     if cookies_path:
         ydl_opts["cookiefile"] = cookies_path
-        logger.info("Cookies loaded from %s", cookies_path)
+        logger.info("Cookies YouTube chargés depuis %s", cookies_path)
     else:
-        logger.warning("No cookies available, risk of bot detection")
+        logger.warning("Pas de cookies YT (%s), risque de bot detection", COOKIES_SOURCE)
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(youtube_url, download=False)
@@ -150,11 +146,12 @@ def _resolve_hls_url(youtube_url: str) -> str:
     if dash_formats:
         return min(dash_formats, key=lambda f: f.get("height") or 10**9)["url"]
 
-    url = info.get("url")
+    url = info.get("url") or info.get("manifest_url")
     if url:
         return url
 
-    raise RuntimeError("No usable stream found")
+    raise RuntimeError(f"No usable stream found for {youtube_url}")
+
 # ──────────────────────────────────────────────
 # YOLO detector
 # ──────────────────────────────────────────────
