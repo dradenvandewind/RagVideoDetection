@@ -118,10 +118,17 @@ def _get_writable_cookies_path() -> str | None:
 
 
 def _resolve_hls_url(youtube_url: str) -> str:
+    """ 
     ydl_opts = {
         "quiet": True,
         "no_warnings": True,
+    } 
+    """
+    ydl_opts = {
+        "proxy": "socks5://localhost:1080",
+        "quiet": True,
     }
+    
 
     cookies_path = _get_writable_cookies_path()
     if cookies_path:
