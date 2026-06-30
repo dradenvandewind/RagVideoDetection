@@ -85,7 +85,7 @@ services:
       - ./data:/app/data:ro
       #- ./addons.mozilla.org_cookies.txt:/app/cookies.txt:ro
       - ./yt_cookies.txt:/app/cookies.txt:ro
-      - /app/cookies.txt:/app/cookies.txt:ro
+      - /app/cookies.txt:/app/cookies.txt
       #- ~/.mozilla/firefox:/root/.mozilla/firefox:ro
       - hf_cache:/root/.cache/huggingface
       - yolo_cache:/root/.cache/ultralytics

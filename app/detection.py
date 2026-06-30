@@ -84,106 +84,55 @@ class FrameResult:
 #     }
 #     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
 #         info = ydl.extract_info(youtube_url, download=False)
-#         # Pour un live YouTube, l'URL du manifest HLS est dans 'url'
+#         # For a YouTube live stream, the manifest HLS URL is in 'url'
 #         url = info.get("url") or info.get("manifest_url")
 #         if not url:
-#             # Fallback sur les formats disponibles
+#             # Fallback to the available formats
 #             for fmt in info.get("formats", []):
 #                 if fmt.get("protocol") in ("m3u8", "m3u8_native"):
 #                     return fmt["url"]
-#             raise RuntimeError(f"Aucun stream HLS trouvé pour {youtube_url}")
+#             raise RuntimeError(f"No HLS stream found for {youtube_url}")
 #         return url
 # """
 
-
-import logging
-import time
-import yt_dlp
-
-logger = logging.getLogger(__name__)
-
-_po_token: str | None = None
-_visitor_data: str | None = None
-_token_fetched_at: float = 0
-_TOKEN_TTL = 3600
-
-
-def _is_token_expired() -> bool:
-    return (time.time() - _token_fetched_at) > _TOKEN_TTL
-
-
-def refresh_po_token() -> tuple[str, str]:
-    """
-    Génère un PO token via le plugin yt-dlp-get-pot.
-    Compatible avec l'API actuelle qui exige un argument 'client'.
-    """
-    opts = {"quiet": True, "skip_download": True}
-
-    with yt_dlp.YoutubeDL(opts) as ydl:
-        ie = ydl.get_info_extractor("Youtube")
-
-        # L'API du plugin attend maintenant un client explicite
-        for client in ("web", "web_creator", "mweb"):
-            try:
-                pot_client = getattr(ie, "_GetPOTClient", None) or getattr(ie, "_pot_client", None)
-                if pot_client and hasattr(pot_client, "_fetch_po_token"):
-                    visitor_data, po_token = pot_client._fetch_po_token(client)
-                    if po_token and visitor_data:
-                        logger.info("PO token obtenu via client '%s'", client)
-                        return po_token, visitor_data
-            except Exception as e:
-                logger.debug("Client '%s' échoué : %s", client, e)
-                continue
-
-    raise RuntimeError(
-        "Plugin PO token indisponible ou aucun client fonctionnel. "
-        "Vérifiez : pip install yt-dlp-get-pot bgutil-ytdlp-pot-provider "
-        "et installez deno : https://deno.land"
-    )
-
-
-def _get_po_token_args() -> dict:
-    global _po_token, _visitor_data, _token_fetched_at
-
-    if _po_token is None or _is_token_expired():
-        try:
-            _po_token, _visitor_data = refresh_po_token()
-            _token_fetched_at = time.time()
-        except Exception as e:
-            logger.warning("PO token indisponible, fallback sans token : %s", e)
-            _po_token = None
-            _visitor_data = None
-
-    if _po_token and _visitor_data:
-        return {
-            "youtube": {
-                "po_token": [f"web+{_po_token}"],
-                "visitor_data": [_visitor_data],
-            }
-        }
-    return {}
-
-
+import shutil
+import tempfile
 import os
 
-COOKIES_PATH = os.getenv("YT_COOKIES_PATH", "/app/cookies.txt")
+COOKIES_SOURCE = os.getenv("YT_COOKIES_PATH", "/app/cookies.txt")
+_writable_cookies_path = None
+
+def _get_writable_cookies_path() -> str | None:
+    """Copy cookies to /tmp (writable) once per run."""
+    global _writable_cookies_path
+
+    if not os.path.isfile(COOKIES_SOURCE):
+        return None
+
+    if _writable_cookies_path is None or not os.path.isfile(_writable_cookies_path):
+        _writable_cookies_path = "/tmp/yt_cookies_writable.txt"
+        shutil.copy2(COOKIES_SOURCE, _writable_cookies_path)
+        logger.info("Cookies copied to %s (writable)", _writable_cookies_path)
+
+    return _writable_cookies_path
+
 
 def _resolve_hls_url(youtube_url: str) -> str:
     ydl_opts = {
         "quiet": True,
         "extractor_args": {
             "youtube": {
-                "player_client": ["tv_embedded", "web"],
+                "player_client": ["web", "mweb"],  é
             }
         },
     }
 
-    # Cookies si disponibles (contourne le bot check sans token)
-    if os.path.isfile(COOKIES_PATH):
-        ydl_opts["cookiefile"] = COOKIES_PATH
-        logger.info("Cookies YouTube chargés depuis %s", COOKIES_PATH)
+    cookies_path = _get_writable_cookies_path()
+    if cookies_path:
+        ydl_opts["cookiefile"] = cookies_path
+        logger.info("Cookies loaded from %s", cookies_path)
     else:
-        logger.warning("Pas de cookies YT (%s), risque de bot detection", COOKIES_PATH)
+        logger.warning("No cookies available, risk of bot detection")
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(youtube_url, download=False)
@@ -223,7 +172,7 @@ class YOLOStreamDetector:
         frame_skip: int = 5,      # process 1 frame out of N (performance vs accuracy)
         max_frames: int = 500,    # safety limit for long videos
     ):
-        logger.info("⚙️  Chargement YOLOv8 depuis %s…", model_path)
+        logger.info("⚙️  Loading YOLOv8 from %s…", model_path)
         self.model = YOLO(model_path)
         self.confidence = confidence
         self.frame_skip = frame_skip
@@ -237,13 +186,13 @@ class YOLOStreamDetector:
         Async generator: resolves the stream, reads frames, runs YOLO,
         and yields a FrameResult for each processed frame.
         """
-        logger.info("🔗 Résolution du stream HLS pour %s…", youtube_url)
+        logger.info("🔗 Resolving HLS stream for %s…", youtube_url)
         hls_url = await asyncio.to_thread(_resolve_hls_url, youtube_url)
-        logger.info("✅ Stream HLS : %s…", hls_url[:80])
+        logger.info("✅ HLS stream: %s…", hls_url[:80])
 
         cap = cv2.VideoCapture(hls_url)
         if not cap.isOpened():
-            raise RuntimeError(f"Impossible d'ouvrir le stream : {hls_url}")
+            raise RuntimeError(f"Unable to open stream: {hls_url}")
 
         fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
         frame_idx = 0
@@ -253,7 +202,7 @@ class YOLOStreamDetector:
             while processed < self.max_frames:
                 ok, frame = await asyncio.to_thread(cap.read)
                 if not ok:
-                    logger.info("🏁 Fin du stream après %d frames traitées.", processed)
+                    logger.info("🏁 End of stream after %d processed frames.", processed)
                     break
 
                 frame_idx += 1
