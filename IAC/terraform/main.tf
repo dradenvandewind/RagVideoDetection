@@ -323,3 +323,53 @@ resource "null_resource" "ansible_provision" {
     EOT
   }
 }
+
+# ──────────────────────────────────────────────
+# Upload YouTube cookies sur l'EC2
+# ──────────────────────────────────────────────
+
+resource "null_resource" "upload_yt_cookies" {
+  depends_on = [null_resource.ansible_provision]
+
+  # Re-upload automatique si le fichier change ou si l'instance change
+  triggers = {
+    cookies_hash = fileexists("${path.module}/cookies.txt") ? filemd5("${path.module}/cookies.txt") : "missing"
+    instance_id  = aws_instance.rag_server.id
+  }
+
+  # Vérifie que le fichier existe localement
+  provisioner "local-exec" {
+    command = <<-EOT
+      if [ ! -f "${path.module}/cookies.txt" ]; then
+        echo "❌ cookies.txt manquant. Lance d'abord sur ta machine :"
+        echo "   yt-dlp --cookies-from-browser firefox --cookies ${path.module}/cookies.txt --skip-download 'https://www.youtube.com/watch?v=z545k7Tcb5o'"
+        exit 1
+      fi
+      echo "✅ cookies.txt trouvé"
+    EOT
+  }
+
+  connection {
+    type        = "ssh"
+    user        = "ubuntu"
+    private_key = file(var.ssh_private_key_path)
+    host        = aws_eip.rag_server.public_ip
+    timeout     = "2m"
+  }
+
+  provisioner "remote-exec" {
+    inline = ["sudo mkdir -p /app", "sudo chown ubuntu:ubuntu /app"]
+  }
+
+  provisioner "file" {
+    source      = "${path.module}/cookies.txt"
+    destination = "/app/cookies.txt"
+  }
+
+  provisioner "remote-exec" {
+    inline = [
+      "chmod 600 /app/cookies.txt",
+      "echo '✅ cookies.txt déployé dans /app/cookies.txt'"
+    ]
+  }
+}
