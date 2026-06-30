@@ -122,7 +122,7 @@ def _resolve_hls_url(youtube_url: str) -> str:
         "quiet": True,
         "extractor_args": {
             "youtube": {
-                "player_client": ["web", "mweb"],  é
+                "player_client": ["web", "mweb"], 
             }
         },
     }
