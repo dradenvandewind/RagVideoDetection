@@ -2,7 +2,7 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <title>YOLO RAG — Détection en temps réel</title>
+  <title>YOLO RAG — Real-Time Detection</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body { font-family: system-ui, sans-serif; background: #0f0f0f; color: #e0e0e0; padding: 20px; }
@@ -78,7 +78,7 @@
   <h1>🎯 YOLO RAG — Détection YouTube en temps réel</h1>
 
   <div class="controls">
-    <input id="yt-url" type="text" placeholder="https://www.youtube.com/watch?v=…" value="">
+    <input id="yt-url" type="text" placeholder="https://www.dailymotion.com/video/ID=…" value="">
     <label>
       Confiance
       <input id="conf" type="range" min="10" max="90" value="40"
@@ -91,13 +91,13 @@
              oninput="document.getElementById('skip-val').textContent = this.value">
       <span id="skip-val" style="font-size:0.75rem;color:#aaa">5</span>
     </label>
-    <button id="btn-start" onclick="startDetection()">▶ Démarrer</button>
-    <button id="btn-stop" onclick="stopDetection()" style="display:none">⏹ Arrêter</button>
+    <button id="btn-start" onclick="startDetection()">▶ Start</button>
+    <button id="btn-stop" onclick="stopDetection()" style="display:none">⏹ Stop</button>
   </div>
 
   <div class="grid">
     <div id="canvas-wrap">
-      <div id="placeholder">Entrez une URL YouTube et cliquez sur Démarrer</div>
+      <div id="placeholder">Enter a DailyMotion URL and click Start</div>
       <img id="canvas" style="display:none" alt="Frame annotée">
     </div>
     <div class="stats">
@@ -112,14 +112,14 @@
   <div id="log"></div>
 
   <div class="chat-section">
-    <h2>💬 Interroger les détections (RAG)</h2>
+    <h2>💬 Query the detections (RAG)</h2>
     <div class="chat-row">
       <input id="chat-input" type="text"
-             placeholder="Ex: Quand a-t-on vu une voiture dans la vidéo ?"
+             placeholder="Ex: When did we see a car in the video?"
              onkeydown="if(event.key==='Enter') askRag()">
-      <button onclick="askRag()" style="background:#1565c0;color:#fff">Demander</button>
+      <button onclick="askRag()" style="background:#1565c0;color:#fff">Ask</button>
     </div>
-    <div id="chat-answer">Les réponses apparaîtront ici…</div>
+    <div id="chat-answer">The answers will appear here…</div>
   </div>
 
   <script>
@@ -141,14 +141,14 @@
 
     async function startDetection() {
       const url = document.getElementById('yt-url').value.trim();
-      if (!url) { alert('Entrez une URL YouTube'); return; }
+      if (!url) { alert('Enter a dailymotion URL'); return; }
 
       document.getElementById('btn-start').disabled = true;
       document.getElementById('btn-stop').style.display = '';
       document.getElementById('placeholder').style.display = 'none';
       document.getElementById('canvas').style.display = 'block';
 
-      log('Lancement du job de détection…', 'log-info');
+      log('Starting the detection job……', 'log-info');
 
       const conf = parseInt(document.getElementById('conf').value) / 100;
       const skip = parseInt(document.getElementById('skip').value);
@@ -176,9 +176,9 @@
       const wsUrl = `${wsProto}://${location.host}/detect/stream/${jobId}`;
       ws = new WebSocket(wsUrl);
 
-      ws.onopen  = () => log('WebSocket connecté', 'log-info');
-      ws.onerror = (e) => log('Erreur WebSocket', 'log-err');
-      ws.onclose = () => log('WebSocket fermé');
+      ws.onopen  = () => log('WebSocket connected', 'log-info');
+      ws.onerror = (e) => log('WebSocket error', 'log-err');
+      ws.onclose = () => log('WebSocket closed', 'log-info');
 
       ws.onmessage = (event) => {
         const msg = JSON.parse(event.data);
@@ -201,13 +201,13 @@
         }
 
         if (msg.type === 'done') {
-          log('✅ Stream terminé', 'log-info');
+          log('✅ Stream ended', 'log-info');
           document.getElementById('s-status').textContent = 'done';
           stopDetection();
         }
 
         if (msg.type === 'error') {
-          log('❌ Erreur dans le pipeline', 'log-err');
+          log('❌ Error in the pipeline', 'log-err');
           document.getElementById('s-status').textContent = 'error';
           stopDetection();
         }
@@ -236,7 +236,7 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question: q, top_k: 5 }),
       }).then(r => r.json());
-      document.getElementById('chat-answer').textContent = res.answer || 'Pas de réponse.';
+      document.getElementById('chat-answer').textContent = res.answer || 'No response available.';
     }
   </script>
 </body>
