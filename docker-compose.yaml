@@ -36,7 +36,8 @@ services:
       echo '🔧 Création du modèle ctx2k…' &&
       printf 'FROM llama3.2:1b\nPARAMETER num_ctx 1024\n' > /tmp/Modelfile &&
       ollama create llama3.2:1b-ctx2k -f /tmp/Modelfile &&
-      echo '🎉 Modèle prêt.'
+      ollama run llama3 &&
+      echo '🎉 Modèle prêt.' 
     "]
     environment:
       - OLLAMA_HOST=http://ollama:11434
@@ -134,6 +135,8 @@ services:
     #profiles: ["gpu"]
     environment:
       - OLLAMA_NUM_CTX=2048
+      - NVIDIA_VISIBLE_DEVICES= all
+      - NVIDIA_DRIVER_CAPABILITIES= compute,utility
     ports:
       - "11434:11434"
     volumes:
@@ -145,7 +148,7 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              count: all
               capabilities: [gpu]
     healthcheck:
       test: ["CMD", "ollama", "list"]
