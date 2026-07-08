@@ -1,5 +1,5 @@
 """
-Real-time YOLOv8 detection pipeline from a YouTube HLS stream.
+Real-time YOLOv8 detection pipeline from a YouTube or Dailymotion HLS stream.
 
 Flow: yt-dlp → m3u8 URL → OpenCV frame-by-frame → YOLOv8 → results
 """
@@ -7,17 +7,9 @@ Flow: yt-dlp → m3u8 URL → OpenCV frame-by-frame → YOLOv8 → results
 import asyncio
 import base64
 import logging
-import subprocess
-import json
 import os
-
-import subprocess
-import json
-import logging
-import time
-import yt_dlp
-
-
+import re
+import shutil
 import time
 from dataclasses import dataclass, field
 from typing import AsyncGenerator, Any
@@ -28,6 +20,36 @@ import yt_dlp
 from ultralytics import YOLO
 
 logger = logging.getLogger(__name__)
+
+# ──────────────────────────────────────────────
+# Source detection (YouTube / Dailymotion)
+# ──────────────────────────────────────────────
+
+_YT_REGEX = re.compile(
+    r"(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)([A-Za-z0-9_-]{11})"
+)
+_DM_REGEX = re.compile(
+    r"(?:dailymotion\.com/(?:video|embed/video)/|dai\.ly/)([A-Za-z0-9]+)"
+)
+
+
+def _detect_source(url: str) -> tuple[str | None, str | None]:
+    """Detect the platform and video id from a URL.
+
+    Returns (source, video_id), e.g. ("youtube", "dQw4w9WgXcQ") or
+    ("dailymotion", "x9rovny"). Returns (None, None) if unrecognized.
+    """
+    match = _YT_REGEX.search(url)
+    if match:
+        return "youtube", match.group(1)
+
+    match = _DM_REGEX.search(url)
+    if match:
+        video_id = match.group(1).split("_")[0]
+        return "dailymotion", video_id
+
+    return None, None
+
 
 # ──────────────────────────────────────────────
 # Data classes
@@ -69,38 +91,12 @@ class FrameResult:
 
 
 # ──────────────────────────────────────────────
-# HLS stream URL resolver
+# Cookies handling (YouTube only — Dailymotion doesn't need them)
 # ──────────────────────────────────────────────
-# """
-# def _resolve_hls_url(youtube_url: str) -> str:
-#     """
-#     Resolves the HLS/m3u8 URL for a YouTube video or live stream via yt-dlp.
-#     Selects the lowest resolution format to minimize
-#     bandwidth (we only need frames for YOLO).
-#     """
-#     ydl_opts = {
-#         "quiet": True,
-#         "no_warnings": True,
-#     }
-#     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-#         info = ydl.extract_info(youtube_url, download=False)
-#         # For a YouTube live stream, the manifest HLS URL is in 'url'
-#         url = info.get("url") or info.get("manifest_url")
-#         if not url:
-#             # Fallback to the available formats
-#             for fmt in info.get("formats", []):
-#                 if fmt.get("protocol") in ("m3u8", "m3u8_native"):
-#                     return fmt["url"]
-#             raise RuntimeError(f"No HLS stream found for {youtube_url}")
-#         return url
-# """
-
-import shutil
-import tempfile
-import os
 
 COOKIES_SOURCE = os.getenv("YT_COOKIES_PATH", "/app/cookies.txt")
-_writable_cookies_path = None
+_writable_cookies_path: str | None = None
+
 
 def _get_writable_cookies_path() -> str | None:
     """Copy cookies to /tmp (writable) once per run."""
@@ -117,34 +113,53 @@ def _get_writable_cookies_path() -> str | None:
     return _writable_cookies_path
 
 
-def _resolve_hls_url(youtube_url: str) -> str:
-    """ 
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-    } 
+# ──────────────────────────────────────────────
+# HLS stream URL resolver
+# ──────────────────────────────────────────────
+
+# Optional SOCKS/HTTP proxy for yt-dlp requests. Left unset by default —
+# only used if YT_DLP_PROXY is actually configured in the environment, so
+# this doesn't break on machines/containers without that proxy running.
+YT_DLP_PROXY = os.getenv("YT_DLP_PROXY")
+
+# Which yt-dlp "player client" to impersonate for YouTube extraction.
+# "tv" tends to dodge bot-detection better for live streams; override via env.
+YT_PLAYER_CLIENT = os.getenv("YT_PLAYER_CLIENT", "tv")
+
+
+def _resolve_hls_url(url: str) -> str:
     """
-    ydl_opts = {
+    Resolves the HLS/m3u8 (or DASH) URL for a YouTube or Dailymotion video
+    or live stream via yt-dlp. Selects the lowest resolution format to
+    minimize bandwidth (we only need frames for YOLO).
+    """
+    source, video_id = _detect_source(url)
+    if not video_id:
+        raise ValueError(f"URL non reconnue (ni YouTube ni Dailymotion): {url}")
+
+    ydl_opts: dict[str, Any] = {
         "quiet": True,
         "no_warnings": True,
-        "proxy": "socks5://host.docker.internal:1080",
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["tv"],
-            }
-        },
     }
-    
 
-    cookies_path = _get_writable_cookies_path()
-    if cookies_path:
-        ydl_opts["cookiefile"] = cookies_path
-        logger.info("Cookies YouTube chargés depuis %s", cookies_path)
-    else:
-        logger.warning("Pas de cookies YT (%s), risque de bot detection", COOKIES_SOURCE)
+    if YT_DLP_PROXY:
+        ydl_opts["proxy"] = YT_DLP_PROXY
 
-    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-        info = ydl.extract_info(youtube_url, download=False)
+    if source == "youtube":
+        ydl_opts["extractor_args"] = {"youtube": {"player_client": [YT_PLAYER_CLIENT]}}
+        cookies_path = _get_writable_cookies_path()
+        if cookies_path:
+            ydl_opts["cookiefile"] = cookies_path
+            logger.info("Cookies YouTube chargés depuis %s", cookies_path)
+        else:
+            logger.warning("Pas de cookies YT (%s), risque de bot detection", COOKIES_SOURCE)
+
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+    except Exception as exc:
+        logger.error("yt-dlp extraction failed for %s (%s): %s", video_id, source, exc)
+        raise RuntimeError(f"Impossible d'extraire le flux pour {url}: {exc}") from exc
 
     formats = info.get("formats", [])
 
@@ -159,11 +174,12 @@ def _resolve_hls_url(youtube_url: str) -> str:
     if dash_formats:
         return min(dash_formats, key=lambda f: f.get("height") or 10**9)["url"]
 
-    url = info.get("url") or info.get("manifest_url")
-    if url:
-        return url
+    stream_url = info.get("url") or info.get("manifest_url")
+    if stream_url:
+        return stream_url
 
-    raise RuntimeError(f"No usable stream found for {youtube_url}")
+    raise RuntimeError(f"No usable stream found for {url} ({source})")
+
 
 # ──────────────────────────────────────────────
 # YOLO detector
@@ -172,7 +188,7 @@ def _resolve_hls_url(youtube_url: str) -> str:
 class YOLOStreamDetector:
     """
     Open an HLS stream and perform YOLOv8 inference on every Nth frame.
-    Works with both regular YouTube videos and YouTube live streams.
+    Works with YouTube videos/live streams and Dailymotion videos.
     """
 
     def __init__(
@@ -190,15 +206,20 @@ class YOLOStreamDetector:
 
     async def stream_detections(
         self,
-        youtube_url: str,
+        video_url: str,
     ) -> AsyncGenerator[FrameResult, None]:
         """
-        Async generator: resolves the stream, reads frames, runs YOLO,
-        and yields a FrameResult for each processed frame.
+        Async generator: resolves the stream (YouTube or Dailymotion),
+        reads frames, runs YOLO, and yields a FrameResult for each
+        processed frame.
         """
-        logger.info("🔗 Resolving HLS stream for %s…", youtube_url)
-        hls_url = await asyncio.to_thread(_resolve_hls_url, youtube_url)
-        logger.info("✅ HLS stream: %s…", hls_url[:80])
+        source, video_id = _detect_source(video_url)
+        if not video_id:
+            raise ValueError(f"URL non reconnue (ni YouTube ni Dailymotion): {video_url}")
+
+        logger.info("🔗 Resolving %s stream for %s…", source, video_id)
+        hls_url = await asyncio.to_thread(_resolve_hls_url, video_url)
+        logger.info("✅ Stream resolved: %s…", hls_url[:80])
 
         cap = cv2.VideoCapture(hls_url)
         if not cap.isOpened():
@@ -220,7 +241,7 @@ class YOLOStreamDetector:
                     continue
 
                 timestamp = frame_idx / fps
-                result = await asyncio.to_thread(self._infer, frame, frame_idx, timestamp, youtube_url)
+                result = await asyncio.to_thread(self._infer, frame, frame_idx, timestamp, video_url)
                 processed += 1
                 yield result
 
