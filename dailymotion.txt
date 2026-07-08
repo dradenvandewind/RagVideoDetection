@@ -1,0 +1,16 @@
+curl -s https://www.dailymotion.com/player/metadata/video/x64xta | jq
+
+
+https://www.dailymotion.com/video/x9rovny
+
+
+curl -s https://www.dailymotion.com/player/metadata/video/x9rovny | jq
+
+curl -s https://www.dailymotion.com/player/metadata/video/x9rovny \
+| jq -r '.qualities.auto[0].url'
+
+
+
+
+
+
