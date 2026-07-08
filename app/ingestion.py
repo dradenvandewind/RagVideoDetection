@@ -1,5 +1,6 @@
 """
 Async video ingestion pipeline using yt-dlp.
+Supports YouTube and Dailymotion sources.
 """
 
 import asyncio
@@ -7,6 +8,8 @@ import logging
 import os
 import re
 from typing import Any
+
+import requests
 import yt_dlp
 
 from llama_index.core import Document, VectorStoreIndex
@@ -21,14 +24,47 @@ _YT_REGEX = re.compile(
     r"(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/embed/)([A-Za-z0-9_-]{11})"
 )
 
+# Ex: https://www.dailymotion.com/video/x9rovny
+#     https://www.dailymotion.com/embed/video/x9rovny
+#     https://dai.ly/x9rovny
+_DM_REGEX = re.compile(
+    r"(?:dailymotion\.com/(?:video|embed/video)/|dai\.ly/)([A-Za-z0-9]+)"
+)
+
+
+def _detect_source(url: str) -> tuple[str | None, str | None]:
+    """Detect the platform and video id from a URL.
+
+    Returns (source, video_id), e.g. ("youtube", "dQw4w9WgXcQ") or
+    ("dailymotion", "x9rovny"). Returns (None, None) if unrecognized.
+    """
+    match = _YT_REGEX.search(url)
+    if match:
+        return "youtube", match.group(1)
+
+    match = _DM_REGEX.search(url)
+    if match:
+        # Dailymotion URLs sometimes append "_a-title-slug" after the id
+        # (e.g. x9rovny_some-title). Keep only the actual id.
+        video_id = match.group(1).split("_")[0]
+        return "dailymotion", video_id
+
+    return None, None
+
 
 def _extract_video_id(url: str) -> str | None:
+    """Kept for backward compatibility (YouTube-only lookup)."""
     match = _YT_REGEX.search(url)
     return match.group(1) if match else None
 
 
 def _fetch_transcript_with_ytdlp(url: str) -> str:
-    """Download subtitles (manual or auto) via yt-dlp without Google API."""
+    """Download subtitles (manual or auto) via yt-dlp without any platform-specific API.
+
+    yt-dlp natively supports Dailymotion as well as YouTube, so this works
+    unchanged for both — the platform-specific logic only kicks in as a
+    fallback in `_fetch_dailymotion_transcript_fallback` below.
+    """
     ydl_opts = {
         'skip_download': True,        # We don't want the video/audio, only the text
         'write_auto_html': False,
@@ -41,15 +77,15 @@ def _fetch_transcript_with_ytdlp(url: str) -> str:
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=False)
-        
+
         # Retrieve available subtitles
         subtitles = info.get('subtitles') or {}
         automatic_captions = info.get('automatic_captions') or {}
-        
+
         # Find an available language in our preference order
         chosen_lang = None
         is_auto = False
-        
+
         for lang in ['fr', 'en']:
             if lang in subtitles:
                 chosen_lang = lang
@@ -58,7 +94,7 @@ def _fetch_transcript_with_ytdlp(url: str) -> str:
                 chosen_lang = lang
                 is_auto = True
                 break
-                
+
         if not chosen_lang:
             # Fallback to the first available language
             if subtitles:
@@ -66,23 +102,69 @@ def _fetch_transcript_with_ytdlp(url: str) -> str:
             elif automatic_captions:
                 chosen_lang = list(automatic_captions.keys())[0]
                 is_auto = True
-                
+
         if not chosen_lang:
             raise RuntimeError(f"Aucun sous-titre trouvé pour la vidéo {url}")
 
         # Ask yt-dlp to download only this subtitle into memory or specific format
-        # For simplicity with the yt-dlp API, we can extract the direct json3/vtt URL
         sub_info = automatic_captions[chosen_lang] if is_auto else subtitles[chosen_lang]
-        
+
         # Find the vtt or json3 format URL
         vtt_url = next((item['url'] for item in sub_info if item.get('ext') == 'vtt'), None)
         if not vtt_url:
-            vtt_url = sub_info[0]['url'] # Fallback
+            vtt_url = sub_info[0]['url']  # Fallback
 
         # Download the subtitle content
-        import requests
-        response = requests.get(vtt_url)
+        response = requests.get(vtt_url, timeout=15)
+        response.raise_for_status()
         return _parse_srt_vtt(response.text)
+
+
+def _fetch_dailymotion_metadata(video_id: str) -> dict:
+    """Hit Dailymotion's public player metadata endpoint directly — the same
+    one used by:
+
+        curl -s "https://www.dailymotion.com/player/metadata/video/$ID" \\
+            | jq -r '.qualities.auto[0].url'
+
+    Used as a fallback when yt-dlp's Dailymotion extractor fails or is
+    blocked/rate-limited.
+    """
+    resp = requests.get(
+        f"https://www.dailymotion.com/player/metadata/video/{video_id}",
+        timeout=15,
+    )
+    resp.raise_for_status()
+    return resp.json()
+
+
+def _fetch_dailymotion_transcript_fallback(video_id: str) -> str:
+    """Try to pull subtitles directly from the metadata endpoint.
+
+    NB: this endpoint's schema for subtitles isn't officially documented by
+    Dailymotion and may drift over time — if this starts raising, inspect
+    a live payload (`_fetch_dailymotion_metadata(video_id)`) and adjust the
+    key lookups below.
+    """
+    meta = _fetch_dailymotion_metadata(video_id)
+    subs = (meta.get("subtitles") or {}).get("data") or {}
+
+    if not subs:
+        raise RuntimeError(f"Aucun sous-titre trouvé pour la vidéo Dailymotion {video_id}")
+
+    chosen_lang = next((lang for lang in ("fr", "en") if lang in subs), next(iter(subs), None))
+    if not chosen_lang:
+        raise RuntimeError(f"Aucun sous-titre trouvé pour la vidéo Dailymotion {video_id}")
+
+    track = subs[chosen_lang]
+    if isinstance(track, list):
+        sub_url = track[0]["url"]
+    else:
+        sub_url = track["urls"][0]
+
+    response = requests.get(sub_url, timeout=15)
+    response.raise_for_status()
+    return _parse_srt_vtt(response.text)
 
 
 def _parse_srt_vtt(raw: str) -> str:
@@ -105,31 +187,57 @@ class VideoIngestionPipeline:
             transformations=[SentenceSplitter(chunk_size=512, chunk_overlap=64)]
         )
 
-    async def ingest_youtube_url(
+    async def ingest_video_url(
         self,
         url: str,
         extra_metadata: dict[str, Any] | None = None,
     ) -> int:
-        video_id = _extract_video_id(url)
+        """Generic entry point: works for YouTube and Dailymotion URLs."""
+        source, video_id = _detect_source(url)
         if not video_id:
-            logger.error("Invalid YouTube URL: %s", url)
+            logger.error("URL non reconnue (ni YouTube ni Dailymotion): %s", url)
             return 0
 
-        logger.info("📥 Fetching transcript via yt-dlp for %s…", video_id)
+        logger.info("📥 Fetching transcript via yt-dlp for %s (%s)…", video_id, source)
         try:
-            # On exécute la fonction bloquante yt-dlp dans un thread séparé (async)
             transcript = await asyncio.to_thread(_fetch_transcript_with_ytdlp, url)
         except Exception as exc:
-            logger.error("Transcript unavailable for %s: %s", video_id, exc)
-            return 0
+            if source == "dailymotion":
+                logger.warning("yt-dlp transcript failed for %s: %s — trying fallback…", video_id, exc)
+                try:
+                    transcript = await asyncio.to_thread(
+                        _fetch_dailymotion_transcript_fallback, video_id
+                    )
+                except Exception as exc2:
+                    logger.error("Transcript unavailable for %s: %s", video_id, exc2)
+                    return 0
+            else:
+                logger.error("Transcript unavailable for %s: %s", video_id, exc)
+                return 0
 
         metadata = {
-            "source": "youtube",
+            "source": source,
             "video_id": video_id,
             "url": url,
             **(extra_metadata or {}),
         }
         return await self._insert_text(transcript, metadata)
+
+    # --- Backward-compatible aliases -------------------------------------
+    async def ingest_youtube_url(
+        self,
+        url: str,
+        extra_metadata: dict[str, Any] | None = None,
+    ) -> int:
+        return await self.ingest_video_url(url, extra_metadata)
+
+    async def ingest_dailymotion_url(
+        self,
+        url: str,
+        extra_metadata: dict[str, Any] | None = None,
+    ) -> int:
+        return await self.ingest_video_url(url, extra_metadata)
+    # ----------------------------------------------------------------------
 
     async def ingest_text(
         self,

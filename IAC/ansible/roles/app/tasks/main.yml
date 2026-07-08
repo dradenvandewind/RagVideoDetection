@@ -111,7 +111,7 @@
   git:
     repo: "{{ app_repo_url }}"
     dest: /opt/rag-llamaindex
-    version: master_gpu
+    version: dailymotion_integration
     force: true
   become: true
   become_user: "{{ app_user }}"
