@@ -1,6 +1,6 @@
-"""Pydantic schemas — additions for YOLO detection endpoints."""
+"""Pydantic schemas — additions for YOLO / D-FINE detection endpoints."""
 
-from typing import Any
+from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 
@@ -8,15 +8,24 @@ from pydantic import BaseModel, Field
 
 class DetectRequest(BaseModel):
     url: str = Field(..., description="URL YouTube (vidéo ou live)")
+    backend: Literal["yolo", "dfine"] = Field(
+        default="yolo",
+        description="Détecteur à utiliser : 'yolo' (Ultralytics YOLOv8) ou 'dfine' (D-FINE, transformers)",
+    )
     model_path: str = Field(
         default="yolov8n.pt",
-        description="Poids YOLO à utiliser (yolov8n/s/m/l/x.pt)",
+        description=(
+            "Poids/modèle à charger. Pour backend='yolo' : fichier .pt "
+            "(yolov8n/s/m/l/x.pt). Pour backend='dfine' : repo HuggingFace "
+            "(ex. 'ustc-community/dfine-nano-coco'). Si omis pour 'dfine', "
+            "un modèle nano par défaut est utilisé."
+        ),
     )
     confidence: float = Field(
         default=0.4,
         ge=0.05,
         le=1.0,
-        description="Seuil de confiance YOLO",
+        description="Seuil de confiance",
     )
     frame_skip: int = Field(
         default=5,
