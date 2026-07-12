@@ -5,16 +5,18 @@ Endpoints :
   POST /detect/url          → lance le job de détection (background)
   GET  /detect/status/{id}  → état du job
   WS   /detect/stream/{id}  → stream des frames annotées + détections
+
+
 """
 
 import asyncio
 import json
 import logging
 import uuid
-from typing import Any
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
+from .core.state import AppState, get_app_state, get_app_state_ws
 from .detection import YOLOStreamDetector
 from .detection_indexer import DetectionIndexer
 from .detection_schemas import (
@@ -28,42 +30,27 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/detect", tags=["detection"])
 
-# ──────────────────────────────────────────────
-# Shared state (injected from main.py)
-# ──────────────────────────────────────────────
-
-_index_ref: Any = None          # VectorStoreIndex
-_detect_jobs: dict[str, dict] = {}
-_ws_queues: dict[str, asyncio.Queue] = {}   # job_id → Queue de WSDetectionMessage
-
-
-def init_router(index: Any) -> None:
-    """Called at startup from main.py to inject the index."""
-    global _index_ref
-    _index_ref = index
-
 
 # ──────────────────────────────────────────────
 # POST /detect/url
 # ──────────────────────────────────────────────
 
 @router.post("/url", response_model=DetectResponse)
-async def start_detection(req: DetectRequest):
+async def start_detection(req: DetectRequest, state: AppState = Depends(get_app_state)):
     """Start a YOLO detection job in the background."""
-    if _index_ref is None:
-        raise HTTPException(status_code=503, detail="Index non initialisé")
+    state.ensure_ready()
 
     job_id = str(uuid.uuid4())
-    _detect_jobs[job_id] = {
+    state.detect_jobs[job_id] = {
         "status": "pending",
         "url": req.url,
         "frames_processed": 0,
         "total_detections": 0,
         "indexed_chunks": 0,
     }
-    _ws_queues[job_id] = asyncio.Queue(maxsize=100)
+    state.ws_queues[job_id] = asyncio.Queue(maxsize=100)
 
-    asyncio.create_task(_run_detection_job(job_id, req))
+    asyncio.create_task(_run_detection_job(state, job_id, req))
 
     return DetectResponse(
         job_id=job_id,
@@ -77,8 +64,8 @@ async def start_detection(req: DetectRequest):
 # ──────────────────────────────────────────────
 
 @router.get("/status/{job_id}", response_model=DetectStatusResponse)
-async def detection_status(job_id: str):
-    job = _detect_jobs.get(job_id)
+async def detection_status(job_id: str, state: AppState = Depends(get_app_state)):
+    job = state.detect_jobs.get(job_id)
     if not job:
         raise HTTPException(status_code=404, detail="Job introuvable")
     return DetectStatusResponse(job_id=job_id, **job)
@@ -89,17 +76,21 @@ async def detection_status(job_id: str):
 # ──────────────────────────────────────────────
 
 @router.websocket("/stream/{job_id}")
-async def detection_stream(websocket: WebSocket, job_id: str):
+async def detection_stream(
+    websocket: WebSocket,
+    job_id: str,
+    state: AppState = Depends(get_app_state_ws),
+):
     """
     WebSocket: sends annotated frames and detections in real time.
     The client receives JSON messages matching WSDetectionMessage.
     """
-    if job_id not in _detect_jobs:
+    if job_id not in state.detect_jobs:
         await websocket.close(code=1008, reason="Job introuvable")
         return
 
     await websocket.accept()
-    queue = _ws_queues.get(job_id)
+    queue = state.ws_queues.get(job_id)
     if not queue:
         await websocket.close(code=1011, reason="Queue introuvable")
         return
@@ -123,19 +114,19 @@ async def detection_stream(websocket: WebSocket, job_id: str):
         logger.info("🔌 Client WebSocket déconnecté pour job %s", job_id)
     finally:
         # Queue cleanup
-        _ws_queues.pop(job_id, None)
+        state.ws_queues.pop(job_id, None)
 
 
 # ──────────────────────────────────────────────
 # Background task
 # ──────────────────────────────────────────────
 
-async def _run_detection_job(job_id: str, req: DetectRequest) -> None:
+async def _run_detection_job(state: AppState, job_id: str, req: DetectRequest) -> None:
     """
     Background task: HLS stream → YOLO → ChromaDB indexing + WS broadcast.
     """
-    job = _detect_jobs[job_id]
-    queue = _ws_queues.get(job_id)
+    job = state.detect_jobs[job_id]
+    queue = state.ws_queues.get(job_id)
 
     job["status"] = "running"
     logger.info("▶️  Job %s démarré pour %s", job_id, req.url)
@@ -146,7 +137,8 @@ async def _run_detection_job(job_id: str, req: DetectRequest) -> None:
         frame_skip=req.frame_skip,
         max_frames=req.max_frames,
     )
-    indexer = DetectionIndexer(index=_index_ref)
+
+    indexer = DetectionIndexer(index=state.index)
 
     total_detections = 0
     frames_processed = 0
