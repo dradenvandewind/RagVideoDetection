@@ -91,6 +91,38 @@ class FrameResult:
 
 
 # ──────────────────────────────────────────────
+# Shared helpers: annotation + JPEG encoding
+# Réutilisés par YOLOStreamDetector et DFineStreamDetector (detection_dfine.py)
+# ──────────────────────────────────────────────
+
+def annotate_frame(frame: np.ndarray, detections: list[Detection]) -> np.ndarray:
+    """Draw bounding boxes + labels on a copy of the frame. detections use
+    normalized [0-1] coordinates (as stored in Detection.box)."""
+    h, w = frame.shape[:2]
+    annotated = frame.copy()
+    for det in detections:
+        x1, y1, x2, y2 = det.box
+        x1, y1, x2, y2 = int(x1 * w), int(y1 * h), int(x2 * w), int(y2 * h)
+        cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
+        cv2.putText(
+            annotated,
+            f"{det.label} {det.score:.2f}",
+            (x1, max(y1 - 8, 10)),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (0, 255, 0),
+            1,
+            cv2.LINE_AA,
+        )
+    return annotated
+
+
+def encode_jpeg_b64(frame: np.ndarray, quality: int = 70) -> str:
+    _, buf = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, quality])
+    return base64.b64encode(buf.tobytes()).decode()
+
+
+# ──────────────────────────────────────────────
 # Cookies handling (YouTube only — Dailymotion doesn't need them)
 # ──────────────────────────────────────────────
 
@@ -260,7 +292,6 @@ class YOLOStreamDetector:
         results = self.model(frame, conf=self.confidence, verbose=False)
 
         detections: list[Detection] = []
-        annotated = frame.copy()
 
         for result in results:
             for box in result.boxes:
@@ -278,22 +309,8 @@ class YOLOStreamDetector:
                     video_url=video_url,
                 ))
 
-                # Visual annotation on the frame
-                cv2.rectangle(annotated, (int(x1), int(y1)), (int(x2), int(y2)), (0, 255, 0), 2)
-                cv2.putText(
-                    annotated,
-                    f"{label} {score:.2f}",
-                    (int(x1), max(int(y1) - 8, 10)),
-                    cv2.FONT_HERSHEY_SIMPLEX,
-                    0.55,
-                    (0, 255, 0),
-                    1,
-                    cv2.LINE_AA,
-                )
-
-        # JPEG encoding → base64
-        _, buf = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 70])
-        jpeg_b64 = base64.b64encode(buf.tobytes()).decode()
+        annotated = annotate_frame(frame, detections)
+        jpeg_b64 = encode_jpeg_b64(annotated)
 
         return FrameResult(
             frame_id=frame_id,

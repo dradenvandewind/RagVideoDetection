@@ -6,7 +6,6 @@ Endpoints :
   GET  /detect/status/{id}  → état du job
   WS   /detect/stream/{id}  → stream des frames annotées + détections
 
-
 """
 
 import asyncio
@@ -17,7 +16,7 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
 
 from .core.state import AppState, get_app_state, get_app_state_ws
-from .detection import YOLOStreamDetector
+from .detection_factory import build_detector
 from .detection_indexer import DetectionIndexer
 from .detection_schemas import (
     DetectRequest,
@@ -131,13 +130,9 @@ async def _run_detection_job(state: AppState, job_id: str, req: DetectRequest) -
     job["status"] = "running"
     logger.info("▶️  Job %s démarré pour %s", job_id, req.url)
 
-    detector = YOLOStreamDetector(
-        model_path=req.model_path,
-        confidence=req.confidence,
-        frame_skip=req.frame_skip,
-        max_frames=req.max_frames,
-    )
-
+    detector = build_detector(req)
+    # state.index est toujours la référence à jour, y compris après un
+    # reset via /index (plus besoin d'un init_router() séparé).
     indexer = DetectionIndexer(index=state.index)
 
     total_detections = 0
