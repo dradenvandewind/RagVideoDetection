@@ -1,9 +1,5 @@
 """Factory : construit le détecteur adapté à la requête (YOLO ou D-FINE).
 
-C'est le seul point du code qui connaît l'existence des deux implémentations.
-detection_router.py ne dépend que de cette factory, jamais des classes
-concrètes directement — pour ajouter un 3e backend demain, on ne touche
-que ce fichier.
 """
 
 from typing import Protocol
@@ -20,10 +16,6 @@ class StreamDetector(Protocol):
         ...
 
 
-# Le fichier yolov8n.pt par défaut de DetectRequest n'a de sens que pour
-# backend="yolo" ; s'il n'a pas été explicitement changé par l'appelant et
-# que backend="dfine" est demandé, on bascule sur le modèle D-FINE par défaut
-# plutôt que de tenter de charger "yolov8n.pt" comme repo HuggingFace.
 _YOLO_DEFAULT_MODEL_PATH = "yolov8n.pt"
 
 
