@@ -37,7 +37,7 @@ class PlateTracker:
 
     def __init__(
         self,
-        model_path: str = "models/license_plate_detector.pt",
+        model_path: str = "/app/app/models/license_plate_detector.pt",
         gpu: bool = True,
         iou_threshold: float = 0.5,
         ttl_frames: int = 30,
