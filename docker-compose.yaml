@@ -76,7 +76,7 @@ services:
       CHUNK_OVERLAP: ${CHUNK_OVERLAP:-64}
       CHROMA_PATH: /app/chroma_db
       PORT: ${PORT:-8000}
-      WORKERS: ${WORKERS:-4}
+      WORKERS: ${WORKERS:-1}
       YT_DLP_JS_RUNTIMES: nodejs
       YT_COOKIES_PATH: /app/cookies.txt
       YOLO_TELEMETRY: "False"
