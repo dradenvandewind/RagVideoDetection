@@ -1,7 +1,7 @@
 """
 License plate detection & OCR module.
 
-Flow: vehicle crop (from YOLO detection) → YOLO plate detector → EasyOCR
+Flow: vehicle crop (from YOLO detection) -> YOLO plate detector -> EasyOCR
 Includes a lightweight IoU-based tracker to avoid re-running OCR
 on the same vehicle across consecutive frames.
 """
@@ -19,7 +19,7 @@ VEHICLE_LABELS = {"car", "truck", "motorcycle", "bus"}
 
 
 def _iou(box_a: list[float], box_b: list[float]) -> float:
-    """Intersection over Union entre deux box normalisées [x1, y1, x2, y2]."""
+    """Intersection over Union entre deux box normalisees [x1, y1, x2, y2]."""
     xa1, ya1 = max(box_a[0], box_b[0]), max(box_a[1], box_b[1])
     xa2, ya2 = min(box_a[2], box_b[2]), min(box_a[3], box_b[3])
     inter = max(0, xa2 - xa1) * max(0, ya2 - ya1)
@@ -31,8 +31,8 @@ def _iou(box_a: list[float], box_b: list[float]) -> float:
 
 class PlateTracker:
     """
-    Hide license plate readings based on the vehicle's approximate position,
-    to avoid running the OCR again on the same vehicle every frame.
+    Cache plate readings by approximate vehicle position to avoid
+    re-running OCR on the same vehicle every frame.
     """
 
     def __init__(
@@ -43,7 +43,7 @@ class PlateTracker:
         ttl_frames: int = 30,
         plate_confidence: float = 0.5,
     ):
-        logger.info("⚙️ Loading license plate detection model from %s…", model_path)
+        logger.info("Loading license plate detection model from %s...", model_path)
         self.plate_model = YOLO(model_path)
         self.ocr_reader = easyocr.Reader(["en"], gpu=gpu)
 
