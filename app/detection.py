@@ -19,6 +19,8 @@ import numpy as np
 import yt_dlp
 from ultralytics import YOLO
 
+from app.plate_tracker import PlateTracker
+
 logger = logging.getLogger(__name__)
 
 # ──────────────────────────────────────────────
@@ -307,12 +309,14 @@ class YOLOStreamDetector:
         confidence: float = 0.4,
         frame_skip: int = 5,      # process 1 frame out of N (performance vs accuracy)
         max_frames: int = 500,    # safety limit for long videos
+        plate_model_path: str = "models/license_plate_detector.pt",
     ):
         logger.info("⚙️  Loading YOLOv8 from %s…", model_path)
         self.model = YOLO(model_path)
         self.confidence = confidence
         self.frame_skip = frame_skip
         self.max_frames = max_frames
+        self.plate_tracker = PlateTracker(model_path=plate_model_path)
 
     async def stream_detections(
         self,
@@ -380,6 +384,7 @@ class YOLOStreamDetector:
                 
                 norm_box = [x1 / w, y1 / h, x2 / w, y2 / h]
                 color = _classify_hsv_color(frame, norm_box)
+                plate = self.plate_tracker.get_or_compute(frame, norm_box, label, frame_id)
 
                 detections.append(Detection(
                     label=label,

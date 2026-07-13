@@ -29,6 +29,10 @@ sentence-transformers
 # Vector store
 chromadb==0.6.3
 
+
+easyocr
+huggingface_hub
+
 # YouTube transcription (pipeline existant)
 youtube-transcript-api==0.6.3
 
