@@ -12,6 +12,7 @@ import re
 import shutil
 import time
 from dataclasses import dataclass, field
+from turtle import color
 from typing import AsyncGenerator, Any
 
 import cv2
@@ -63,12 +64,12 @@ class Detection:
     frame_id: int
     timestamp: float
     video_url: str
+    color: str = "indéterminé" 
 
     def to_text(self) -> str:
-        """Indexable text representation for ChromaDB."""
         return (
             f"Frame {self.frame_id} at {self.timestamp:.2f}s: "
-            f"detected '{self.label}' with confidence {self.score:.2f}"
+            f"detected '{self.label}' ({self.color}) with confidence {self.score:.2f}"
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -79,6 +80,7 @@ class Detection:
             "frame_id": self.frame_id,
             "timestamp": round(self.timestamp, 3),
             "video_url": self.video_url,
+            "color": self.color, 
         }
 
 
@@ -106,14 +108,14 @@ def annotate_frame(frame: np.ndarray, detections: list[Detection]) -> np.ndarray
         cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
         cv2.putText(
             annotated,
-            f"{det.label} {det.score:.2f}",
-            (x1, max(y1 - 8, 10)),
+            f"{det.label} {det.score:.2f} [{det.color}]",
+            (int(x1), max(int(y1) - 8, 10)),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.55,
-            (0, 255, 0),
-            1,
-            cv2.LINE_AA,
-        )
+           (0, 255, 0),
+           1,
+           cv2.LINE_AA,
+      )
     return annotated
 
 
@@ -212,6 +214,83 @@ def _resolve_hls_url(url: str) -> str:
 
     raise RuntimeError(f"No usable stream found for {url} ({source})")
 
+# ──────────────────────────────────────────────
+# HSV color classifier
+# ──────────────────────────────────────────────
+
+# Hue ranges in OpenCV space (H: 0-179)
+_HSV_COLOR_RANGES: list[tuple[str, int, int]] = [
+    ("red",     0,   10),
+    ("orange",  11,  25),
+    ("yellow",  26,  34),
+    ("green",   35,  85),
+    ("cyan",    86,  95),
+    ("blue",    96,  130),
+    ("purple",  131, 155),
+    ("pink",    156, 169),
+    ("red",     170, 179),  # red wraps around
+]
+
+
+def _classify_hsv_color(
+    frame: np.ndarray,
+    box: list[float],
+    sat_min: int = 60,
+    val_min: int = 40,
+    val_max: int = 250,
+) -> str:
+    """
+    Determines the dominant color in a normalized bounding box [0-1].
+    Ignores pixels with low saturation (gray/white/black) using S/V thresholds.
+    Returns a color label or 'undetermined' if too few valid pixels.
+    """
+    h, w = frame.shape[:2]
+    x1, y1, x2, y2 = box
+    xi1, yi1 = int(x1 * w), int(y1 * h)
+    xi2, yi2 = int(x2 * w), int(y2 * h)
+
+    xi1, xi2 = max(0, xi1), min(w, xi2)
+    yi1, yi2 = max(0, yi1), min(h, yi2)
+
+    if xi2 <= xi1 or yi2 <= yi1:
+        return "undetermined"
+
+    crop = frame[yi1:yi2, xi1:xi2]
+    if crop.size == 0:
+        return "undetermined"
+
+    hsv = cv2.cvtColor(crop, cv2.COLOR_BGR2HSV)
+    h_ch, s_ch, v_ch = hsv[:, :, 0], hsv[:, :, 1], hsv[:, :, 2]
+
+    # Mask: keep only "colored" pixels (exclude gray, white, and black)    
+    mask = (s_ch >= sat_min) & (v_ch >= val_min) & (v_ch <= val_max)
+
+    valid_hues = h_ch[mask]
+    if valid_hues.size < (crop.shape[0] * crop.shape[1] * 0.1):
+        # Less than 10% of valid colored pixels → gray/white/black/too dark object
+        return _classify_achromatic(v_ch)
+
+    # Histogram of hues on valid pixels
+    hist, _ = np.histogram(valid_hues, bins=180, range=(0, 180))
+    dominant_hue = int(np.argmax(hist))
+
+    for name, low, high in _HSV_COLOR_RANGES:
+        if low <= dominant_hue <= high:
+            return name
+
+    return "undetermined"
+
+
+def _classify_achromatic(v_ch: np.ndarray) -> str:
+    """Distinguishes black, white, and gray when the saturation is too low."""    
+    mean_v = float(np.mean(v_ch))
+    if mean_v < 60:
+        return "black"
+    if mean_v > 200:
+        return "white"
+    return "gray"
+
+
 
 # ──────────────────────────────────────────────
 # YOLO detector
@@ -299,6 +378,9 @@ class YOLOStreamDetector:
                 score = float(box.conf[0])
                 cls_id = int(box.cls[0])
                 label = self.model.names[cls_id]
+                
+                norm_box = [x1 / w, y1 / h, x2 / w, y2 / h]
+                color = _classify_hsv_color(frame, norm_box)
 
                 detections.append(Detection(
                     label=label,
@@ -307,6 +389,7 @@ class YOLOStreamDetector:
                     frame_id=frame_id,
                     timestamp=timestamp,
                     video_url=video_url,
+                    color=color,
                 ))
 
         annotated = annotate_frame(frame, detections)
