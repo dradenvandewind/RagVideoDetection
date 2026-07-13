@@ -43,7 +43,7 @@ class PlateTracker:
         ttl_frames: int = 30,
         plate_confidence: float = 0.5,
     ):
-        logger.info("⚙️ Chargement du modèle de détection de plaques depuis %s…", model_path)
+        logger.info("⚙️ Loading license plate detection model from %s…", model_path)
         self.plate_model = YOLO(model_path)
         self.ocr_reader = easyocr.Reader(["en"], gpu=gpu)
 

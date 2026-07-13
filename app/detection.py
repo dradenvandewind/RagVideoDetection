@@ -19,7 +19,7 @@ import numpy as np
 import yt_dlp
 from ultralytics import YOLO
 
-from app.plate_tracker import PlateTracker
+from .plate_tracker import PlateTracker
 
 logger = logging.getLogger(__name__)
 
