@@ -8,7 +8,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
     && rm -rf /var/lib/apt/lists/*
-RUN apt-get update && apt-get install -y python3-tk libtk8.6 libtcl8.6 && rm -rf /var/lib/apt/lists/*
 
 RUN curl -Ls https://astral.sh/uv/install.sh | sh
 ENV PATH="/root/.local/bin:$PATH"
