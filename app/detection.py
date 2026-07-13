@@ -19,7 +19,7 @@ import numpy as np
 import yt_dlp
 from ultralytics import YOLO
 
-from .plate_tracker import PlateTracker
+from app.plate_tracker import PlateTracker
 
 logger = logging.getLogger(__name__)
 
@@ -309,7 +309,7 @@ class YOLOStreamDetector:
         confidence: float = 0.4,
         frame_skip: int = 5,      # process 1 frame out of N (performance vs accuracy)
         max_frames: int = 500,    # safety limit for long videos
-        plate_model_path: str = "models/license_plate_detector.pt",
+        plate_model_path: str = "/app/app/models/license_plate_detector.pt",
     ):
         logger.info("⚙️  Loading YOLOv8 from %s…", model_path)
         self.model = YOLO(model_path)
