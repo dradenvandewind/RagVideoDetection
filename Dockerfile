@@ -85,7 +85,7 @@ ENV PYTHONUNBUFFERED=1 \
     CHUNK_SIZE=512 \
     CHUNK_OVERLAP=64 \
     PORT=8000 \
-    WORKERS=4 \
+    WORKERS=1 \
     YOLO_TELEMETRY=False
 
 #COPY cookies.txt /app/cookies.txt
